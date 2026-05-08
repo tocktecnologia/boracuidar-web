@@ -1,6 +1,8 @@
 ﻿import { Navigate, Route, Routes } from "react-router-dom";
 import MarketplacePage from "./pages/MarketplacePage";
 import MarketplaceBusinessPage from "./pages/MarketplaceBusinessPage";
+import MarketplaceBusinessServicesPage from "./pages/MarketplaceBusinessServicesPage";
+import MarketplaceServiceBookingPage from "./pages/MarketplaceServiceBookingPage";
 import MarketplaceBusinessReviewsPage from "./pages/MarketplaceBusinessReviewsPage";
 import MarketplaceMySchedulesPage from "./pages/MarketplaceMySchedulesPage";
 import MarketplaceConfirmationPage from "./pages/MarketplaceConfirmationPage";
@@ -12,6 +14,8 @@ export default function App() {
       <Route path="/" element={<Navigate to="/marketplace" replace />} />
       <Route path="/marketplace" element={<MarketplacePage />} />
       <Route path="/marketplace/business" element={<MarketplaceBusinessPage />} />
+      <Route path="/marketplace/business/services" element={<MarketplaceBusinessServicesPage />} />
+      <Route path="/marketplace/business/services/:serviceId" element={<MarketplaceServiceBookingPage />} />
       <Route path="/marketplace/business/reviews" element={<MarketplaceBusinessReviewsPage />} />
       <Route path="/marketplace/meus-agendamentos" element={<MarketplaceMySchedulesPage />} />
       <Route path="/marketplace/confirmation" element={<MarketplaceConfirmationPage />} />

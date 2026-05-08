@@ -148,19 +148,6 @@ export default function MarketplacePage() {
   }, [businesses]);
   const heroCategories = useMemo(() => categories.filter((item) => item !== "Todos").slice(0, 8), [categories]);
 
-  const topCities = useMemo(() => {
-    const map = new Map();
-    businesses.forEach((item) => {
-      const key = item.city.trim();
-      if (!key) return;
-      map.set(key, (map.get(key) ?? 0) + 1);
-    });
-    return [...map.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([city]) => city);
-  }, [businesses]);
-
   const featuredBusinesses = useMemo(() => businesses.filter((item) => item.featured), [businesses]);
 
   const filteredBusinesses = useMemo(() => {
@@ -232,7 +219,7 @@ export default function MarketplacePage() {
           <div className="market-headline-overlay" />
           <h1>
             Bora Cuidar
-            <span>Beleza e bem-estar perto de voce</span>
+            <span>Beleza e bem-estar perto de você</span>
           </h1>
           <p>Descubra servicos, compare opcoes e agende em minutos.</p>
         </div>
@@ -274,176 +261,149 @@ export default function MarketplacePage() {
       </section>
 
       <div className="market-content-shell">
-      <section className="market-filters-strip">
-        <div className="filter-group">
-          <span>Categorias</span>
-          <div className="category-row">
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                className={selectedCategory === category ? "chip active" : "chip"}
-                onClick={() => setSelectedCategory(category)}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="filter-group">
-          <span><MapPin size={14} /> Cidades populares</span>
-          <div className="city-row">
-            {topCities.map((city) => (
-              <button key={city} type="button" className="city-chip" onClick={() => setSearchWhere(city)}>{city}</button>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {loading ? <p className="section-message">Carregando marketplace...</p> : null}
-      {error ? <p className="error-text section-message">{error}</p> : null}
+        {error ? <p className="error-text section-message">{error}</p> : null}
 
-      {!loading && !error ? (
-        <section className="market-list-section">
-          <div className="list-header">
-            <h2>Estabelecimentos em destaque</h2>
-            <div className="carousel-arrows">
-              <button className="carousel-arrow" onClick={() => moveCarousel(-1)} aria-label="Anterior" type="button">
-                <ChevronLeft size={18} />
-              </button>
-              <button className="carousel-arrow" onClick={() => moveCarousel(1)} aria-label="Proximo" type="button">
-                <ChevronRight size={18} />
-              </button>
+        {!loading && !error ? (
+          <section className="market-list-section">
+            <div className="list-header">
+              <h2>Estabelecimentos em destaque</h2>
+              <div className="carousel-arrows">
+                <button className="carousel-arrow" onClick={() => moveCarousel(-1)} aria-label="Anterior" type="button">
+                  <ChevronLeft size={18} />
+                </button>
+                <button className="carousel-arrow" onClick={() => moveCarousel(1)} aria-label="Proximo" type="button">
+                  <ChevronRight size={18} />
+                </button>
+              </div>
             </div>
-          </div>
 
-          {featuredBusinesses.length === 0 ? (
-            <p className="section-message">Nenhum estabelecimento em destaque no momento.</p>
-          ) : (
-            <div className="estab-carousel" ref={carouselRef}>
-              {featuredBusinesses.map((item) => (
-                <Link
-                  key={item.id}
-                  className="estab-carousel-card-link"
-                  to={`/marketplace/business?businessId=${encodeURIComponent(item.id)}`}
-                >
-                  <article className="estab-carousel-card">
-                    <div className="carousel-cover-wrap">
-                      <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" />
-                      {item.reviewsCount > 0 ? <span className="carousel-rating-pill">{item.rating.toFixed(1)}</span> : null}
-                    </div>
-                    <h3>{item.name}</h3>
-                    {item.reviewsCount > 0 ? (
-                      <div className="market-rating-line">
-                        <Star size={14} className="rating-star-icon" />
-                        <span>{item.rating.toFixed(1)}</span>
+            {featuredBusinesses.length === 0 ? (
+              <p className="section-message">Nenhum estabelecimento em destaque no momento.</p>
+            ) : (
+              <div className="estab-carousel" ref={carouselRef}>
+                {featuredBusinesses.map((item) => (
+                  <Link
+                    key={item.id}
+                    className="estab-carousel-card-link"
+                    to={`/marketplace/business?businessId=${encodeURIComponent(item.id)}`}
+                  >
+                    <article className="estab-carousel-card">
+                      <div className="carousel-cover-wrap">
+                        <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" />
+                        {item.reviewsCount > 0 ? <span className="carousel-rating-pill">{item.rating.toFixed(1)}</span> : null}
                       </div>
-                    ) : null}
-                    <p className="market-address">{item.city ? `${item.city}${item.state ? ` - ${item.state}` : ""}` : item.address}</p>
-                    <p className="price-from">{item.startingPrice > 0 ? `A partir de ${formatMoney(item.startingPrice)}` : "Consulte valores"}</p>
-                  </article>
-                </Link>
-              ))}
+                      <h3>{item.name}</h3>
+                      {item.reviewsCount > 0 ? (
+                        <div className="market-rating-line">
+                          <Star size={14} className="rating-star-icon" />
+                          <span>{item.rating.toFixed(1)}</span>
+                        </div>
+                      ) : null}
+                      <p className="market-address">{item.city ? `${item.city}${item.state ? ` - ${item.state}` : ""}` : item.address}</p>
+                      <p className="price-from">{item.startingPrice > 0 ? `A partir de ${formatMoney(item.startingPrice)}` : "Consulte valores"}</p>
+                    </article>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {!loading && !error ? (
+          <section className="market-grid-section" ref={filteredCardsRef}>
+            <div className="list-header">
+              <h2>Estabelecimentos</h2>
             </div>
-          )}
-        </section>
-      ) : null}
 
-      {!loading && !error ? (
-        <section className="market-grid-section" ref={filteredCardsRef}>
-          <div className="list-header">
-            <h2>Estabelecimentos</h2>
-          </div>
-
-          {filteredBusinesses.length === 0 ? (
-            <p className="section-message">Nenhum estabelecimento encontrado para os filtros informados.</p>
-          ) : (
-            <div className="market-cards-grid">
-              {filteredBusinesses.map((item) => (
-                <Link
-                  key={item.id}
-                  className="estab-grid-card-link"
-                  to={`/marketplace/business?businessId=${encodeURIComponent(item.id)}`}
-                >
-                  <article className="estab-grid-card">
-                    <div className="carousel-cover-wrap">
-                      <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" />
-                      {item.reviewsCount > 0 ? <span className="carousel-rating-pill">{item.rating.toFixed(1)}</span> : null}
-                    </div>
-                    <h3>{item.name}</h3>
-                    {item.reviewsCount > 0 ? (
-                      <div className="market-rating-line">
-                        <Star size={14} className="rating-star-icon" />
-                        <span>{item.rating.toFixed(1)}</span>
+            {filteredBusinesses.length === 0 ? (
+              <p className="section-message">Nenhum estabelecimento encontrado para os filtros informados.</p>
+            ) : (
+              <div className="market-cards-grid">
+                {filteredBusinesses.map((item) => (
+                  <Link
+                    key={item.id}
+                    className="estab-grid-card-link"
+                    to={`/marketplace/business?businessId=${encodeURIComponent(item.id)}`}
+                  >
+                    <article className="estab-grid-card">
+                      <div className="carousel-cover-wrap">
+                        <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" />
+                        {item.reviewsCount > 0 ? <span className="carousel-rating-pill">{item.rating.toFixed(1)}</span> : null}
                       </div>
-                    ) : null}
-                    <p className="market-address">{item.city ? `${item.city}${item.state ? ` - ${item.state}` : ""}` : item.address}</p>
-                    <p className="market-description">{item.description}</p>
-                    <p className="price-from">{item.startingPrice > 0 ? `A partir de ${formatMoney(item.startingPrice)}` : "Consulte valores"}</p>
-                  </article>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-      ) : null}
-
-      {!loading && !error ? (
-        <>
-          <section className="market-how-it-works">
-            <h2>Como usar o marketplace</h2>
-            <div className="market-how-grid">
-              <article className="market-how-card">
-                <Search size={18} />
-                <h3>Busque</h3>
-                <p>Digite o servico, cidade ou tipo de atendimento que voce quer.</p>
-              </article>
-              <article className="market-how-card">
-                <ShieldCheck size={18} />
-                <h3>Compare</h3>
-                <p>Veja perfil, nota, descricao e disponibilidade para decidir rapido.</p>
-              </article>
-              <article className="market-how-card">
-                <CalendarCheck size={18} />
-                <h3>Reserve</h3>
-                <p>Entre no perfil, escolha o servico e finalize o agendamento em minutos.</p>
-              </article>
-            </div>
+                      <h3>{item.name}</h3>
+                      {item.reviewsCount > 0 ? (
+                        <div className="market-rating-line">
+                          <Star size={14} className="rating-star-icon" />
+                          <span>{item.rating.toFixed(1)}</span>
+                        </div>
+                      ) : null}
+                      <p className="market-address">{item.city ? `${item.city}${item.state ? ` - ${item.state}` : ""}` : item.address}</p>
+                      <p className="market-description">{item.description}</p>
+                      <p className="price-from">{item.startingPrice > 0 ? `A partir de ${formatMoney(item.startingPrice)}` : "Consulte valores"}</p>
+                    </article>
+                  </Link>
+                ))}
+              </div>
+            )}
           </section>
+        ) : null}
 
-          <section className="market-curiosities">
-            <h2>Curiosidades do marketplace</h2>
-            <div className="market-curiosities-grid">
-              <article className="market-stat-card">
-                <strong>{stats.businessesTotal}</strong>
-                <p>Estabelecimentos ativos</p>
-              </article>
-              <article className="market-stat-card">
-                <strong>{stats.servicesTotal}</strong>
-                <p>Servicos publicados</p>
-              </article>
-              <article className="market-stat-card">
-                <strong>{stats.averageRating ? stats.averageRating.toFixed(1) : "--"}</strong>
-                <p>Avaliacao media</p>
-              </article>
-              <article className="market-stat-card">
-                <strong>{stats.minPrice ? formatMoney(stats.minPrice) : "--"}</strong>
-                <p>Faixa inicial</p>
-              </article>
-            </div>
-          </section>
+        {!loading && !error ? (
+          <>
+            <section className="market-how-it-works">
+              <h2>Como usar o marketplace</h2>
+              <div className="market-how-grid">
+                <article className="market-how-card">
+                  <Search size={18} />
+                  <h3>Busque</h3>
+                  <p>Digite o servico, cidade ou tipo de atendimento que voce quer.</p>
+                </article>
+                <article className="market-how-card">
+                  <ShieldCheck size={18} />
+                  <h3>Compare</h3>
+                  <p>Veja perfil, nota, descricao e disponibilidade para decidir rapido.</p>
+                </article>
+                <article className="market-how-card">
+                  <CalendarCheck size={18} />
+                  <h3>Reserve</h3>
+                  <p>Entre no perfil, escolha o servico e finalize o agendamento em minutos.</p>
+                </article>
+              </div>
+            </section>
 
-          <section className="market-business-cta">
-            <h2>Tem um negocio e quer aparecer aqui?</h2>
-            <p>Mostre sua pagina, receba novos clientes e transforme visitas em agendamentos.</p>
-            <div className="market-business-cta-actions">
-              <a href="https://business.boracuidar.app/signup" className="market-signup-btn">Cadastrar meu negocio</a>
-              <a href="https://business.boracuidar.app/signin" className="market-signin-btn">Ja tenho conta</a>
-            </div>
-          </section>
-        </>
-      ) : null}
+            <section className="market-curiosities">
+              <h2>Curiosidades do marketplace</h2>
+              <div className="market-curiosities-grid">
+                <article className="market-stat-card">
+                  <strong>{stats.businessesTotal}</strong>
+                  <p>Estabelecimentos ativos</p>
+                </article>
+                <article className="market-stat-card">
+                  <strong>{stats.servicesTotal}</strong>
+                  <p>Servicos publicados</p>
+                </article>
+                <article className="market-stat-card">
+                  <strong>{stats.averageRating ? stats.averageRating.toFixed(1) : "--"}</strong>
+                  <p>Avaliacao media</p>
+                </article>
+                <article className="market-stat-card">
+                  <strong>{stats.minPrice ? formatMoney(stats.minPrice) : "--"}</strong>
+                  <p>Faixa inicial</p>
+                </article>
+              </div>
+            </section>
+
+            <section className="market-business-cta">
+              <h2>Tem um negocio e quer aparecer aqui?</h2>
+              <p>Mostre sua pagina, receba novos clientes e transforme visitas em agendamentos.</p>
+              <div className="market-business-cta-actions">
+                <a href="https://business.boracuidar.app/signup" className="market-signup-btn">Cadastrar meu negocio</a>
+                <a href="https://business.boracuidar.app/signin" className="market-signin-btn">Ja tenho conta</a>
+              </div>
+            </section>
+          </>
+        ) : null}
       </div>
     </MarketplaceLayout>
   );
