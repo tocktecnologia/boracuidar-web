@@ -107,15 +107,42 @@ export function formatMoney(value) {
   }).format(toNumber(value));
 }
 
+function parseDateOnlyIsoLocal(text) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function parseDateOnlyBrLocal(text) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+  if (!match) return null;
+  return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+}
+
+function resolveDate(value) {
+  if (value instanceof Date) return value;
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+
+  const isoDateOnly = parseDateOnlyIsoLocal(text);
+  if (isoDateOnly) return isoDateOnly;
+
+  const brDateOnly = parseDateOnlyBrLocal(text);
+  if (brDateOnly) return brDateOnly;
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function formatDate(value) {
-  const date = value instanceof Date ? value : new Date(String(value ?? ""));
-  if (Number.isNaN(date.getTime())) return "--/--/----";
+  const date = resolveDate(value);
+  if (!date) return "--/--/----";
   return new Intl.DateTimeFormat("pt-BR").format(date);
 }
 
 export function formatDateTime(value) {
-  const date = value instanceof Date ? value : new Date(String(value ?? ""));
-  if (Number.isNaN(date.getTime())) return "";
+  const date = resolveDate(value);
+  if (!date) return "";
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
@@ -141,9 +168,7 @@ export function asDateOnly(date) {
 }
 
 export function parseDate(value) {
-  if (value instanceof Date) return value;
-  const parsed = new Date(String(value ?? "").trim());
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return resolveDate(value);
 }
 
 export function parseTimeOnDate(date, value) {

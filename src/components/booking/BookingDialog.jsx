@@ -9,7 +9,7 @@ import {
   shouldBlockN8nForBusinessRow,
   toJsonSafe,
 } from "../../lib/firestore";
-import { asDateOnly, formatMoney, overlaps, parseDate, parseTimeOnDate, sameMinute, toInt, toNumber } from "../../lib/marketplace";
+import { asDateOnly, firstText, formatMoney, overlaps, parseDate, parseTimeOnDate, sameMinute, toInt, toNumber } from "../../lib/marketplace";
 
 const SEARCH_HORIZON_DAYS = 60;
 const WINDOW_DAYS = 7;
@@ -826,6 +826,17 @@ export default function BookingDialog({
   const workerRow = workers.find((worker) => worker.id === selectedWorkerId) ?? null;
   const workerName = workerRow?.nome ?? "Profissional";
   const workerAvatar = workerPhoto(workerRow);
+  const businessLogo = useMemo(
+    () =>
+      firstText([
+        businessRow?.logo_url,
+        businessRow?.logo,
+        businessRow?.foto_url,
+        businessRow?.photo_url,
+        businessRow?.cover_photo_url,
+      ]) ?? "",
+    [businessRow],
+  );
 
   const canSchedule =
     !loading &&
@@ -848,11 +859,26 @@ export default function BookingDialog({
       <Modal isOpen={isOpen} onClose={() => !saving && !askingCustomer && onClose?.()} maxWidth={860}>
         <div className="booking-dialog-modern">
           <header className="booking-modern-head">
-            <span />
+            <div className="booking-head-left" aria-hidden="true">
+              {businessLogo ? (
+                <div className="booking-business-logo">
+                  <img src={businessLogo} alt="Logo do estabelecimento" loading="lazy" />
+                </div>
+              ) : (
+                <span className="booking-head-spacer" />
+              )}
+            </div>
             <h3>{monthLabel(selectedDate ?? today)}</h3>
-            <button className="booking-icon-circle" onClick={() => !saving && !askingCustomer && onClose?.()} disabled={saving || askingCustomer}>
-              <X size={20} />
-            </button>
+            <div className="booking-head-right">
+              <button
+                className="booking-icon-circle"
+                onClick={() => !saving && !askingCustomer && onClose?.()}
+                disabled={saving || askingCustomer}
+                type="button"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </header>
 
           {loading ? (

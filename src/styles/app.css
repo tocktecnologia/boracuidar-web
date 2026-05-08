@@ -919,6 +919,17 @@ p {
   min-width: 210px;
 }
 
+.market-back-link {
+  font-size: 0.8rem;
+  color: #5d738b;
+  font-weight: 700;
+}
+
+.market-back-link:hover {
+  color: #2f4f6f;
+  text-decoration: underline;
+}
+
 .business-profile-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.8fr);
@@ -1430,17 +1441,61 @@ p {
 
 .booking-modern-head {
   padding: 8px 0 12px;
-  display: grid;
-  grid-template-columns: 44px 1fr 44px;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+
+.booking-head-spacer {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+}
+
+.booking-head-left {
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.booking-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 44px;
 }
 
 .booking-modern-head h3 {
+  margin: 0;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   text-align: center;
   font-size: clamp(1.8rem, 4vw, 2.7rem);
   font-weight: 800;
   line-height: 1.04;
   letter-spacing: -0.03em;
+  pointer-events: none;
+}
+
+.booking-business-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid #d7e1ec;
+  background: #fff;
+  overflow: hidden;
+  flex: 0 0 42px;
+}
+
+.booking-business-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .booking-icon-circle {
@@ -1921,6 +1976,29 @@ p {
   min-width: 140px;
 }
 
+.schedules-search-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.schedules-business-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  border: 1px solid #dbe5ef;
+  overflow: hidden;
+  flex: 0 0 48px;
+  background: #fff;
+}
+
+.schedules-business-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .schedules-page .schedule-card-head span {
   border: 1px solid;
   border-radius: 999px;
@@ -2115,6 +2193,7 @@ p {
 
   .hero-actions,
   .search-row,
+  .schedules-search-head,
   .dialog-head,
   .dialog-foot,
   .booking-modern-foot,
@@ -2130,6 +2209,12 @@ p {
 
   .business-hero {
     min-height: 420px;
+  }
+
+  .schedules-business-logo {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
   }
 
   .hero-business-logo {
@@ -2222,6 +2307,22 @@ p {
     width: 36px;
     height: 36px;
     flex: 0 0 36px;
+  }
+
+  .booking-head-spacer {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+
+  .booking-head-left {
+    min-width: 36px;
+  }
+
+  .booking-business-logo {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
   }
 
   .booking-date-list,

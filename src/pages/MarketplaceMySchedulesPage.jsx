@@ -1,11 +1,11 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, Search } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import PhoneVerificationDialog from "../components/schedules/PhoneVerificationDialog";
 import { auth } from "../lib/firebase";
 import { queryRows, shouldBlockN8nForBusinessRow, toJsonSafe, updateRows } from "../lib/firestore";
-import { digitsOnly, formatDate, firstText, toInt } from "../lib/marketplace";
+import { asDateOnly, digitsOnly, formatDate, firstText, parseDate, parseTimeOnDate, toInt } from "../lib/marketplace";
 
 function useBusinessId() {
   const { search } = useLocation();
@@ -26,8 +26,37 @@ function canCancel(status) {
   return ["confirmado", "agendado", "confirmed", "scheduled"].includes(normalized);
 }
 
+function scheduleDateKey(value) {
+  if (!value) return null;
+  if (value instanceof Date) return asDateOnly(value);
+
+  const text = String(value).trim();
+  const brDate = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+  if (brDate) {
+    return new Date(Number(brDate[3]), Number(brDate[2]) - 1, Number(brDate[1]));
+  }
+  const datePrefix = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
+  if (datePrefix) {
+    return new Date(Number(datePrefix[1]), Number(datePrefix[2]) - 1, Number(datePrefix[3]));
+  }
+
+  const parsed = parseDate(text);
+  return parsed ? asDateOnly(parsed) : null;
+}
+
+function scheduleStartAt(row) {
+  const date = scheduleDateKey(row?.data_agendamento);
+  if (!date) return null;
+
+  const start = parseTimeOnDate(date, row?.hora_inicio);
+  if (start) return start;
+
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
+}
+
 export default function MarketplaceMySchedulesPage() {
   const businessId = useBusinessId();
+  const hasBusinessScope = Boolean(businessId);
 
   const [phone, setPhone] = useState("");
   const [verifiedPhone, setVerifiedPhone] = useState("");
@@ -41,50 +70,153 @@ export default function MarketplaceMySchedulesPage() {
 
   const [serviceNameById, setServiceNameById] = useState({});
   const [workerNameById, setWorkerNameById] = useState({});
+  const [businessNameById, setBusinessNameById] = useState({});
+  const [scopedBusinessLogo, setScopedBusinessLogo] = useState("");
+  const [scopedBusinessName, setScopedBusinessName] = useState("");
 
   const phoneDigits = useMemo(() => digitsOnly(phone), [phone]);
 
-  async function loadSchedules(targetDigits) {
-    if (!businessId) {
-      setError("Business ID ausente.");
-      return;
+  function scopedKey(scopeBusinessId, id) {
+    return `${String(scopeBusinessId ?? "").trim()}::${String(id ?? "").trim()}`;
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadScopedBusinessIdentity() {
+      if (!hasBusinessScope || !businessId) {
+        if (!active) return;
+        setScopedBusinessLogo("");
+        setScopedBusinessName("");
+        return;
+      }
+
+      try {
+        const rows = await queryRows({
+          table: "business",
+          conditions: [{ field: "id", operator: "eq", value: businessId }],
+          limit: 1,
+        });
+
+        if (!active) return;
+        const row = rows[0] ?? {};
+
+        setScopedBusinessName(firstText([row.nome, row.nome_fantasia]) ?? "Estabelecimento");
+        setScopedBusinessLogo(
+          firstText([
+            row.logo_url,
+            row.logo,
+            row.foto_url,
+            row.photo_url,
+            row.cover_photo_url,
+          ]) ?? "",
+        );
+      } catch {
+        if (!active) return;
+        setScopedBusinessLogo("");
+        setScopedBusinessName("");
+      }
     }
 
+    loadScopedBusinessIdentity();
+
+    return () => {
+      active = false;
+    };
+  }, [businessId, hasBusinessScope]);
+
+  async function loadSchedules(targetDigits) {
     setLoading(true);
     setError("");
 
     try {
-      const [scheduleRows, serviceRows, workerRows] = await Promise.all([
-        queryRows({
-          table: "agendamentos",
-          conditions: [
-            { field: "business_id", operator: "eq", value: businessId },
-            { field: "cliente_telefone", operator: "eq", value: targetDigits },
-          ],
-          orders: [
-            { field: "data_agendamento", ascending: false },
-            { field: "hora_inicio", ascending: false },
-          ],
-        }),
-        queryRows({ table: "servicos", conditions: [{ field: "business_id", operator: "eq", value: businessId }] }),
-        queryRows({ table: "trabalhadores", conditions: [{ field: "business_id", operator: "eq", value: businessId }] }),
-      ]);
+      const scheduleConditions = [{ field: "cliente_telefone", operator: "eq", value: targetDigits }];
+      if (hasBusinessScope) {
+        scheduleConditions.unshift({ field: "business_id", operator: "eq", value: businessId });
+      }
+
+      const scheduleRowsRaw = await queryRows({
+        table: "agendamentos",
+        conditions: scheduleConditions,
+        orders: [
+          { field: "data_agendamento", ascending: false },
+          { field: "hora_inicio", ascending: false },
+        ],
+      });
+
+      const now = new Date();
+      const scheduleRows = scheduleRowsRaw.filter((row) => {
+        const startAt = scheduleStartAt(row);
+        return startAt && startAt.getTime() > now.getTime();
+      });
+
+      const uniqueBusinessIds = Array.from(
+        new Set(
+          scheduleRows
+            .map((row) => String(row.business_id ?? "").trim())
+            .filter(Boolean),
+        ),
+      );
+
+      let serviceRows = [];
+      let workerRows = [];
+      let businessRows = [];
+
+      if (hasBusinessScope) {
+        [serviceRows, workerRows, businessRows] = await Promise.all([
+          queryRows({ table: "servicos", conditions: [{ field: "business_id", operator: "eq", value: businessId }] }),
+          queryRows({ table: "trabalhadores", conditions: [{ field: "business_id", operator: "eq", value: businessId }] }),
+          queryRows({ table: "business", conditions: [{ field: "id", operator: "eq", value: businessId }], limit: 1 }),
+        ]);
+      } else if (uniqueBusinessIds.length > 0) {
+        const perBusinessRows = await Promise.all(
+          uniqueBusinessIds.map(async (currentBusinessId) => {
+            const [servicesForBusiness, workersForBusiness, businessForBusiness] = await Promise.all([
+              queryRows({ table: "servicos", conditions: [{ field: "business_id", operator: "eq", value: currentBusinessId }] }),
+              queryRows({ table: "trabalhadores", conditions: [{ field: "business_id", operator: "eq", value: currentBusinessId }] }),
+              queryRows({ table: "business", conditions: [{ field: "id", operator: "eq", value: currentBusinessId }], limit: 1 }),
+            ]);
+            return {
+              servicesForBusiness,
+              workersForBusiness,
+              businessForBusiness,
+            };
+          }),
+        );
+
+        serviceRows = perBusinessRows.flatMap((item) => item.servicesForBusiness);
+        workerRows = perBusinessRows.flatMap((item) => item.workersForBusiness);
+        businessRows = perBusinessRows.flatMap((item) => item.businessForBusiness);
+      }
 
       const serviceMap = {};
       serviceRows.forEach((row) => {
         const id = toInt(row.id);
-        if (id) serviceMap[id] = row.nome || "Servico";
+        const scopeId = String(row.business_id ?? "").trim();
+        if (id != null && scopeId) {
+          serviceMap[scopedKey(scopeId, id)] = row.nome || "Servico";
+        }
       });
 
       const workerMap = {};
       workerRows.forEach((row) => {
         const id = toInt(row.id);
-        if (id) workerMap[id] = row.nome || "Profissional";
+        const scopeId = String(row.business_id ?? "").trim();
+        if (id != null && scopeId) {
+          workerMap[scopedKey(scopeId, id)] = row.nome || "Profissional";
+        }
+      });
+
+      const businessMap = {};
+      businessRows.forEach((row) => {
+        const id = String(row.id ?? "").trim();
+        if (id) businessMap[id] = row.nome || "Estabelecimento";
       });
 
       setSchedules(scheduleRows);
       setServiceNameById(serviceMap);
       setWorkerNameById(workerMap);
+      setBusinessNameById(businessMap);
       setSearchedPhone(targetDigits);
     } catch (loadError) {
       setError(`Erro ao buscar agendamentos: ${loadError.message}`);
@@ -94,10 +226,6 @@ export default function MarketplaceMySchedulesPage() {
   }
 
   function requestSearch() {
-    if (!businessId) {
-      setError("Business ID ausente.");
-      return;
-    }
     if (phoneDigits.length < 10) {
       setError("Informe um numero valido.");
       return;
@@ -131,9 +259,10 @@ export default function MarketplaceMySchedulesPage() {
         conditions: [{ field: "id", operator: "eq", value: scheduleId }],
       });
 
+      const scheduleBusinessId = String(schedule.business_id ?? businessId ?? "").trim();
       const [updatedRows, businessRows] = await Promise.all([
         queryRows({ table: "agendamentos", conditions: [{ field: "id", operator: "eq", value: scheduleId }], limit: 1 }),
-        queryRows({ table: "business", conditions: [{ field: "id", operator: "eq", value: businessId }], limit: 1 }),
+        queryRows({ table: "business", conditions: [{ field: "id", operator: "eq", value: scheduleBusinessId }], limit: 1 }),
       ]);
 
       const updated = updatedRows[0] ?? { ...schedule, status: "cancelado" };
@@ -153,7 +282,7 @@ export default function MarketplaceMySchedulesPage() {
           headers,
           body: JSON.stringify({
             agendamentoId: String(scheduleId),
-            business_id: businessId,
+            business_id: scheduleBusinessId,
             agendamento: toJsonSafe(updated),
             business: toJsonSafe(business),
           }),
@@ -171,9 +300,21 @@ export default function MarketplaceMySchedulesPage() {
   return (
     <MarketplaceLayout hideTopbar>
       <section className="schedules-page">
-        <article className="surface-block">
-          <h1>Meus agendamentos</h1>
-          <p>Digite seu WhatsApp para consultar e cancelar agendamentos desse estabelecimento.</p>
+        <article className="surface-block schedules-search-block">
+          <div className="schedules-search-head">
+            {hasBusinessScope && scopedBusinessLogo ? (
+              <div className="schedules-business-logo" aria-hidden="true">
+                <img src={scopedBusinessLogo} alt={scopedBusinessName || "Logo do estabelecimento"} loading="lazy" />
+              </div>
+            ) : null}
+            <div>
+              <h1>Meus agendamentos</h1>
+              <p>
+                Digite seu WhatsApp para consultar e cancelar agendamentos
+                {hasBusinessScope ? " desse estabelecimento." : " em todos os estabelecimentos."}
+              </p>
+            </div>
+          </div>
 
           <div className="search-row">
             <input
@@ -191,11 +332,13 @@ export default function MarketplaceMySchedulesPage() {
         </article>
 
         {schedules.map((schedule) => {
+          const scheduleBusinessId = String(schedule.business_id ?? "").trim();
+          const businessName = businessNameById[scheduleBusinessId] || "Estabelecimento";
           const scheduleId = toInt(schedule.id);
           const serviceId = toInt(schedule.servico_id);
           const workerId = toInt(schedule.trabalhador_id);
-          const serviceName = serviceNameById[serviceId] || "Servico";
-          const workerName = firstText([schedule.trabalhador_nome, workerNameById[workerId]]) || "Profissional";
+          const serviceName = serviceNameById[scopedKey(scheduleBusinessId, serviceId)] || "Servico";
+          const workerName = firstText([schedule.trabalhador_nome, workerNameById[scopedKey(scheduleBusinessId, workerId)]]) || "Profissional";
           const color = statusColor(schedule.status);
 
           return (
@@ -204,6 +347,7 @@ export default function MarketplaceMySchedulesPage() {
                 <strong>{serviceName}</strong>
                 <span style={{ color, borderColor: `${color}55` }}>{schedule.status || "Sem status"}</span>
               </div>
+              {!hasBusinessScope ? <p>Estabelecimento: {businessName}</p> : null}
               <p>Profissional: {workerName}</p>
               <p>Data: {formatDate(schedule.data_agendamento)}</p>
               <p>Horario: {schedule.hora_inicio || "--:--"} - {schedule.hora_fim || "--:--"}</p>
@@ -220,7 +364,13 @@ export default function MarketplaceMySchedulesPage() {
         })}
 
         <div className="section-message">
-          <Link className="ghost-btn" to={`/marketplace/business?businessId=${encodeURIComponent(businessId)}`}>Voltar ao estabelecimento</Link>
+          {hasBusinessScope ? (
+            <Link className="ghost-btn" to={`/marketplace/business?businessId=${encodeURIComponent(businessId)}`}>
+              Voltar ao estabelecimento
+            </Link>
+          ) : (
+            <Link className="ghost-btn" to="/marketplace">Voltar ao marketplace</Link>
+          )}
         </div>
       </section>
 

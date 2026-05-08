@@ -19,6 +19,7 @@ import StarRating from "../components/common/StarRating";
 import { queryRows } from "../lib/firestore";
 import {
   coverFromPageOrBusiness,
+  digitsOnly,
   evaluationSummary,
   extractPageFromBusiness,
   firstText,
@@ -259,6 +260,11 @@ export default function MarketplaceBusinessPage() {
 
   const contactPhone = firstText([page?.contact, page?.phone, business.whatsapp, business.telefone]);
   const whatsappLink = whatsappHref(contactPhone);
+  const whatsappBotPhone = firstText([business.whatsapp_bot, business.whatsapp, business.telefone, page?.contact, page?.phone]);
+  const whatsappBotDigits = digitsOnly(whatsappBotPhone);
+  const mySchedulesWhatsappLink = whatsappBotDigits
+    ? `https://wa.me/${whatsappBotDigits}?text=${encodeURIComponent("/meus_agendamentos")}`
+    : null;
   const address = firstText([page?.address, business.endereco, page?.city, business.cidade]) ?? "Endereco em atualizacao";
   const cityLabel = firstText([business.cidade, page?.city]);
   const mapQuery = encodeURIComponent(`${businessName} ${address}`);
@@ -302,12 +308,21 @@ export default function MarketplaceBusinessPage() {
           </div>
 
           <div className="business-profile-head-actions">
+            <Link className="market-back-link" to="/marketplace">
+              Voltar ao marketplace
+            </Link>
             <button className="cta-btn business-book-now-btn" onClick={() => openBooking()}>
               <CalendarClock size={16} /> Agendar agora
             </button>
-            <Link className="ghost-btn" to={`/marketplace/meus-agendamentos?businessId=${encodeURIComponent(businessId)}`}>
-              Meus agendamentos
-            </Link>
+            {mySchedulesWhatsappLink ? (
+              <a className="ghost-btn" href={mySchedulesWhatsappLink} target="_blank" rel="noreferrer">
+                Meus agendamentos
+              </a>
+            ) : (
+              <Link className="ghost-btn" to={`/marketplace/meus-agendamentos?businessId=${encodeURIComponent(businessId)}`}>
+                Meus agendamentos
+              </Link>
+            )}
           </div>
         </motion.header>
 

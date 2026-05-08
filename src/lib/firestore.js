@@ -84,6 +84,12 @@ function toBool(value) {
   return text === "true" || text === "1" || text === "yes" || text === "sim";
 }
 
+function parseDateOnlyIsoLocal(text) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
 function decodeValue(value) {
   if (value instanceof Timestamp) {
     return value.toDate();
@@ -110,8 +116,14 @@ function normalizeComparable(value) {
   if (value instanceof Date) return value;
   if (value instanceof Timestamp) return value.toDate();
   if (typeof value === "string") {
-    const maybeDate = new Date(value);
-    if (!Number.isNaN(maybeDate.getTime()) && value.includes("-")) return maybeDate;
+    const text = value.trim();
+    const dateOnly = parseDateOnlyIsoLocal(text);
+    if (dateOnly) return dateOnly;
+
+    const maybeDate = new Date(text);
+    if (!Number.isNaN(maybeDate.getTime()) && (text.includes("-") || text.includes("T") || text.includes(":"))) {
+      return maybeDate;
+    }
   }
   return value;
 }
@@ -131,15 +143,19 @@ function compareValues(a, b) {
   return String(left).localeCompare(String(right));
 }
 
+function equalsComparable(a, b) {
+  return compareValues(a, b) === 0;
+}
+
 function matchCondition(row, condition) {
   const left = row[condition.field];
   const right = condition.value;
 
   switch (condition.operator) {
     case "eq":
-      return normalizeComparable(left) === normalizeComparable(right);
+      return equalsComparable(left, right);
     case "neq":
-      return normalizeComparable(left) !== normalizeComparable(right);
+      return !equalsComparable(left, right);
     case "lt":
       return compareValues(left, right) < 0;
     case "lte":
@@ -149,13 +165,12 @@ function matchCondition(row, condition) {
     case "gte":
       return compareValues(left, right) >= 0;
     case "inFilter":
-      return Array.isArray(right) && right.some((item) => normalizeComparable(item) === normalizeComparable(left));
+      return Array.isArray(right) && right.some((item) => equalsComparable(item, left));
     case "contains":
-      return Array.isArray(left) && left.some((item) => normalizeComparable(item) === normalizeComparable(right));
+      return Array.isArray(left) && left.some((item) => equalsComparable(item, right));
     case "overlaps": {
       if (!Array.isArray(left) || !Array.isArray(right)) return false;
-      const leftSet = new Set(left.map(normalizeComparable));
-      return right.map(normalizeComparable).some((item) => leftSet.has(item));
+      return right.some((item) => left.some((leftItem) => equalsComparable(leftItem, item)));
     }
     default:
       return false;
@@ -419,7 +434,10 @@ export async function updateRows({ table, data, conditions = [] }) {
 function parseDate(value) {
   if (value instanceof Date) return value;
   if (typeof value === "string" && value.trim()) {
-    const parsed = new Date(value.trim());
+    const text = value.trim();
+    const dateOnly = parseDateOnlyIsoLocal(text);
+    if (dateOnly) return dateOnly;
+    const parsed = new Date(text);
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   return null;

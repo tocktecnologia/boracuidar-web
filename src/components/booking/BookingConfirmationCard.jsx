@@ -91,8 +91,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack }) {
   }
 
   const { schedule, business, worker, service } = payload;
-  const businessContact = business.whatsapp || business.telefone;
-  const whatsappLink = whatsappHref(businessContact);
+  const whatsappLink = whatsappHref(business.whatsapp_bot);
 
   return (
     <article className="confirmation-card">
