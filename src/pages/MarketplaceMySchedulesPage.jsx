@@ -7,9 +7,27 @@ import { auth } from "../lib/firebase";
 import { queryRows, shouldBlockN8nForBusinessRow, toJsonSafe, updateRows } from "../lib/firestore";
 import { asDateOnly, digitsOnly, formatDate, firstText, parseDate, parseTimeOnDate, toInt } from "../lib/marketplace";
 
-function useBusinessId() {
+function readQueryParam(search, keys) {
+  const source = String(search ?? "");
+  const candidates = Array.isArray(keys) ? keys : [keys];
+
+  for (const key of candidates) {
+    const escapedKey = String(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = new RegExp(`(?:\\?|&)${escapedKey}=([^&?]*)`, "i").exec(source);
+    if (!match) continue;
+    const value = decodeURIComponent(String(match[1] ?? "").replace(/\+/g, " ")).trim();
+    if (value) return value;
+  }
+
+  return "";
+}
+
+function useRouteQueryState() {
   const { search } = useLocation();
-  return new URLSearchParams(search).get("businessId")?.trim() ?? "";
+  const businessIdRaw = readQueryParam(search, ["businessId", "businesId"]);
+  const businessId = businessIdRaw.replace(/\/+$/, "");
+  const whatsapp = readQueryParam(search, ["whatsapp", "whatsap"]);
+  return { businessId, whatsapp };
 }
 
 function statusColor(status) {
@@ -55,10 +73,10 @@ function scheduleStartAt(row) {
 }
 
 export default function MarketplaceMySchedulesPage() {
-  const businessId = useBusinessId();
+  const { businessId, whatsapp: whatsappFromUrl } = useRouteQueryState();
   const hasBusinessScope = Boolean(businessId);
 
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(() => whatsappFromUrl || "");
   const [verifiedPhone, setVerifiedPhone] = useState("");
   const [searchedPhone, setSearchedPhone] = useState("");
   const [verifyOpen, setVerifyOpen] = useState(false);
