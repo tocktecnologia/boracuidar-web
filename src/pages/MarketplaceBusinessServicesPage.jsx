@@ -8,7 +8,11 @@ import { firstText, formatMoney, toInt } from "../lib/marketplace";
 
 function useBusinessId() {
   const { search } = useLocation();
-  const raw = new URLSearchParams(search).get("businessId")?.trim() ?? "";
+  const params = new URLSearchParams(search);
+  const raw =
+    params.get("businessId")?.trim() ??
+    params.get("businesId")?.trim() ??
+    "";
   if (!raw) return "";
   const normalized = raw.replace(/\/+$/, "");
   if (normalized.toLowerCase().endsWith("/services")) {
@@ -17,12 +21,25 @@ function useBusinessId() {
   return normalized;
 }
 
+function usePrefillFromQuery() {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  return {
+    name: params.get("name")?.trim() ?? "",
+    whatsapp:
+      params.get("whatsapp")?.trim() ??
+      params.get("whatsap")?.trim() ??
+      "",
+  };
+}
+
 function logoForBusiness(page, business) {
   return firstText([page?.logo_url, business?.logo_url]) || "/assets/brand/icon-mark.png";
 }
 
 export default function MarketplaceBusinessServicesPage() {
   const businessId = useBusinessId();
+  const prefill = usePrefillFromQuery();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -192,6 +209,8 @@ export default function MarketplaceBusinessServicesPage() {
         isOpen={bookingOpen}
         businessId={businessId}
         initialServiceId={bookingServiceId}
+        initialCustomerName={prefill.name}
+        initialCustomerWhatsapp={prefill.whatsapp}
         onClose={() => setBookingOpen(false)}
         onSuccess={handleBookingSuccess}
       />
