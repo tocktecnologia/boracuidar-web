@@ -836,6 +836,13 @@ export default function BookingDialog({
     selectedStart != null &&
     selectedServiceIds.length > 0;
 
+  const confirmationDateLabel = selectedDate
+    ? new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long" }).format(selectedDate)
+    : "Data indisponivel";
+  const confirmationStart = timelineRows[0]?.start ?? selectedStart;
+  const confirmationEnd = timelineRows[timelineRows.length - 1]?.end ?? null;
+  const confirmationTimeLabel = `de ${confirmationStart ? timeLabel(confirmationStart) : "--:--"} as ${confirmationEnd ? timeLabel(confirmationEnd) : "--:--"}`;
+
   return (
     <>
       <Modal isOpen={isOpen} onClose={() => !saving && !askingCustomer && onClose?.()} maxWidth={860}>
@@ -1111,7 +1118,13 @@ export default function BookingDialog({
 
       <Modal isOpen={customerOpen} onClose={() => !saving && setCustomerOpen(false)} maxWidth={460}>
         <div className="booking-customer-dialog">
-          <h3>Confirmacao</h3>
+          <div className="booking-customer-head">
+            <h3>Confirmacao</h3>
+            <div className="booking-customer-chips">
+              <span className="booking-customer-chip">{confirmationDateLabel}</span>
+              <span className="booking-customer-chip">{confirmationTimeLabel}</span>
+            </div>
+          </div>
 
           <label htmlFor="booking-customer-name">Nome</label>
           <input

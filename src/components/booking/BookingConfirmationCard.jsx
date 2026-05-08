@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink } from "lucide-react";
 import { queryRows } from "../../lib/firestore";
 import { formatDate, formatMoney, whatsappHref } from "../../lib/marketplace";
@@ -135,7 +135,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack }) {
         <button className="ghost-btn" onClick={onBack}>Voltar ao estabelecimento</button>
         {whatsappLink ? (
           <a className="cta-btn" href={whatsappLink} target="_blank" rel="noreferrer">
-            Falar no WhatsApp <ExternalLink size={15} />
+            Salvar Resumo <ExternalLink size={15} />
           </a>
         ) : null}
       </footer>

@@ -1849,6 +1849,33 @@ p {
   gap: 10px;
 }
 
+.booking-customer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.booking-customer-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.booking-customer-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bddbe6;
+  background: #edf7fb;
+  color: #235372;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .booking-picker-list {
   display: grid;
   gap: 8px;
@@ -2167,6 +2194,15 @@ p {
   .business-services-shortcut-tools {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .booking-customer-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .booking-customer-chips {
+    justify-content: flex-start;
   }
 
   .business-logo-shortcut {
