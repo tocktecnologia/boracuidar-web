@@ -72,6 +72,38 @@ function scheduleStartAt(row) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
 }
 
+function chunkArray(values, size = 10) {
+  const list = Array.isArray(values) ? values : [];
+  const output = [];
+  for (let index = 0; index < list.length; index += size) {
+    output.push(list.slice(index, index + size));
+  }
+  return output;
+}
+
+function dateKeyFromDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+async function queryByBusinessAndIds({ table, businessId, ids }) {
+  const normalizedBusinessId = String(businessId ?? "").trim();
+  if (!normalizedBusinessId || !Array.isArray(ids) || ids.length === 0) return [];
+
+  const chunks = chunkArray(Array.from(new Set(ids)), 10);
+  const rows = await Promise.all(
+    chunks.map((chunk) =>
+      queryRows({
+        table,
+        conditions: [
+          { field: "business_id", operator: "eq", value: normalizedBusinessId },
+          { field: "id", operator: "inFilter", value: chunk },
+        ],
+      }),
+    ),
+  );
+  return rows.flat();
+}
+
 export default function MarketplaceMySchedulesPage() {
   const { businessId, whatsapp: whatsappFromUrl } = useRouteQueryState();
   const hasBusinessScope = Boolean(businessId);
@@ -82,6 +114,7 @@ export default function MarketplaceMySchedulesPage() {
   const [verifyOpen, setVerifyOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("");
   const [cancelingId, setCancelingId] = useState(null);
   const [error, setError] = useState("");
   const [schedules, setSchedules] = useState([]);
@@ -145,10 +178,17 @@ export default function MarketplaceMySchedulesPage() {
 
   async function loadSchedules(targetDigits) {
     setLoading(true);
+    setLoadingLabel("Filtrando agendamentos a partir de agora...");
     setError("");
 
     try {
-      const scheduleConditions = [{ field: "cliente_telefone", operator: "eq", value: targetDigits }];
+      const now = new Date();
+      const todayKey = dateKeyFromDate(now);
+
+      const scheduleConditions = [
+        { field: "cliente_telefone", operator: "eq", value: targetDigits },
+        { field: "data_agendamento", operator: "gte", value: todayKey },
+      ];
       if (hasBusinessScope) {
         scheduleConditions.unshift({ field: "business_id", operator: "eq", value: businessId });
       }
@@ -156,16 +196,17 @@ export default function MarketplaceMySchedulesPage() {
       const scheduleRowsRaw = await queryRows({
         table: "agendamentos",
         conditions: scheduleConditions,
-        orders: [
-          { field: "data_agendamento", ascending: false },
-          { field: "hora_inicio", ascending: false },
-        ],
+        limit: hasBusinessScope ? 300 : 500,
       });
 
-      const now = new Date();
+      setLoadingLabel("Validando horarios e removendo agendamentos passados...");
       const scheduleRows = scheduleRowsRaw.filter((row) => {
         const startAt = scheduleStartAt(row);
         return startAt && startAt.getTime() > now.getTime();
+      }).sort((a, b) => {
+        const aStart = scheduleStartAt(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        const bStart = scheduleStartAt(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        return aStart - bStart;
       });
 
       const uniqueBusinessIds = Array.from(
@@ -180,18 +221,49 @@ export default function MarketplaceMySchedulesPage() {
       let workerRows = [];
       let businessRows = [];
 
+      setLoadingLabel("Carregando detalhes dos servicos e profissionais...");
       if (hasBusinessScope) {
-        [serviceRows, workerRows, businessRows] = await Promise.all([
-          queryRows({ table: "servicos", conditions: [{ field: "business_id", operator: "eq", value: businessId }] }),
-          queryRows({ table: "trabalhadores", conditions: [{ field: "business_id", operator: "eq", value: businessId }] }),
-          queryRows({ table: "business", conditions: [{ field: "id", operator: "eq", value: businessId }], limit: 1 }),
+        const serviceIds = Array.from(
+          new Set(
+            scheduleRows
+              .map((row) => toInt(row.servico_id))
+              .filter((id) => id != null),
+          ),
+        );
+        const workerIds = Array.from(
+          new Set(
+            scheduleRows
+              .map((row) => toInt(row.trabalhador_id))
+              .filter((id) => id != null),
+          ),
+        );
+
+        [serviceRows, workerRows] = await Promise.all([
+          queryByBusinessAndIds({ table: "servicos", businessId, ids: serviceIds }),
+          queryByBusinessAndIds({ table: "trabalhadores", businessId, ids: workerIds }),
         ]);
       } else if (uniqueBusinessIds.length > 0) {
         const perBusinessRows = await Promise.all(
           uniqueBusinessIds.map(async (currentBusinessId) => {
+            const rowsForBusiness = scheduleRows.filter((row) => String(row.business_id ?? "").trim() === currentBusinessId);
+            const serviceIds = Array.from(
+              new Set(
+                rowsForBusiness
+                  .map((row) => toInt(row.servico_id))
+                  .filter((id) => id != null),
+              ),
+            );
+            const workerIds = Array.from(
+              new Set(
+                rowsForBusiness
+                  .map((row) => toInt(row.trabalhador_id))
+                  .filter((id) => id != null),
+              ),
+            );
+
             const [servicesForBusiness, workersForBusiness, businessForBusiness] = await Promise.all([
-              queryRows({ table: "servicos", conditions: [{ field: "business_id", operator: "eq", value: currentBusinessId }] }),
-              queryRows({ table: "trabalhadores", conditions: [{ field: "business_id", operator: "eq", value: currentBusinessId }] }),
+              queryByBusinessAndIds({ table: "servicos", businessId: currentBusinessId, ids: serviceIds }),
+              queryByBusinessAndIds({ table: "trabalhadores", businessId: currentBusinessId, ids: workerIds }),
               queryRows({ table: "business", conditions: [{ field: "id", operator: "eq", value: currentBusinessId }], limit: 1 }),
             ]);
             return {
@@ -207,6 +279,7 @@ export default function MarketplaceMySchedulesPage() {
         businessRows = perBusinessRows.flatMap((item) => item.businessForBusiness);
       }
 
+      setLoadingLabel("Finalizando busca...");
       const serviceMap = {};
       serviceRows.forEach((row) => {
         const id = toInt(row.id);
@@ -240,6 +313,7 @@ export default function MarketplaceMySchedulesPage() {
       setError(`Erro ao buscar agendamentos: ${loadError.message}`);
     } finally {
       setLoading(false);
+      setLoadingLabel("");
     }
   }
 
@@ -341,10 +415,11 @@ export default function MarketplaceMySchedulesPage() {
               placeholder="+55 (00) 0 0000-0000"
             />
             <button className="cta-btn" onClick={requestSearch} disabled={loading}>
-              {loading ? <><Loader2 size={15} className="spin" /> Buscando...</> : <><Search size={15} /> Buscar</>}
+              {loading ? <><Loader2 size={15} className="spin" /> {loadingLabel || "Buscando..."}</> : <><Search size={15} /> Buscar</>}
             </button>
           </div>
 
+          {loading ? <p className="muted">Etapa atual: {loadingLabel || "Preparando busca..."}</p> : null}
           {error ? <p className="error-text"><AlertTriangle size={14} /> {error}</p> : null}
           {searchedPhone && schedules.length === 0 && !loading ? <p className="muted">Nenhum agendamento encontrado para este numero.</p> : null}
         </article>

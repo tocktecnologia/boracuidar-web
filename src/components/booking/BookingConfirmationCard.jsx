@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink } from "lucide-react";
 import { queryRows } from "../../lib/firestore";
-import { formatDate, formatMoney, whatsappHref } from "../../lib/marketplace";
+import { digitsOnly, firstText, formatDate, formatMoney } from "../../lib/marketplace";
 
 export default function BookingConfirmationCard({ agendamentoId, onBack }) {
   const [loading, setLoading] = useState(Boolean(agendamentoId));
@@ -91,7 +91,11 @@ export default function BookingConfirmationCard({ agendamentoId, onBack }) {
   }
 
   const { schedule, business, worker, service } = payload;
-  const whatsappLink = whatsappHref(business.whatsapp_bot);
+  const whatsappBotPhone = firstText([business.whatsapp_bot, business.whatsapp, business.telefone]);
+  const whatsappBotDigits = digitsOnly(whatsappBotPhone);
+  const whatsappLink = whatsappBotDigits
+    ? `https://wa.me/${whatsappBotDigits}?text=${encodeURIComponent("/meus_agendamentos")}`
+    : null;
 
   return (
     <article className="confirmation-card">
@@ -134,7 +138,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack }) {
         <button className="ghost-btn" onClick={onBack}>Voltar ao estabelecimento</button>
         {whatsappLink ? (
           <a className="cta-btn" href={whatsappLink} target="_blank" rel="noreferrer">
-            Salvar Resumo <ExternalLink size={15} />
+            Ver meus agendamentos <ExternalLink size={15} />
           </a>
         ) : null}
       </footer>
