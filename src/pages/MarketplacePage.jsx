@@ -146,7 +146,10 @@ export default function MarketplacePage() {
     businesses.forEach((item) => values.add(item.category));
     return Array.from(values);
   }, [businesses]);
-  const heroCategories = useMemo(() => categories.filter((item) => item !== "Todos").slice(0, 8), [categories]);
+  const heroCategories = useMemo(() => {
+    const fastOptions = ["Todos", ...categories.filter((item) => item !== "Todos")];
+    return fastOptions.slice(0, 9);
+  }, [categories]);
 
   const featuredBusinesses = useMemo(() => businesses.filter((item) => item.featured), [businesses]);
 
@@ -224,31 +227,12 @@ export default function MarketplacePage() {
           <p>Descubra servicos, compare opcoes e agende em minutos.</p>
         </div>
 
-        <form className="booksy-search-panel" onSubmit={handleApplyFilters}>
-          <div className="search-cell wide">
-            <label><Search size={14} /> Qual servico?</label>
-            <input
-              value={searchService}
-              onChange={(event) => setSearchService(event.target.value)}
-              placeholder="Corte, escova, manicure, consulta..."
-            />
-          </div>
-          <div className="search-cell">
-            <label><MapPin size={14} /> Onde?</label>
-            <input
-              value={searchWhere}
-              onChange={(event) => setSearchWhere(event.target.value)}
-              placeholder="Cidade ou bairro"
-            />
-          </div>
-          <button className="search-submit-btn" type="submit">Buscar</button>
-        </form>
         <div className="hero-quick-cats">
           {heroCategories.map((category) => (
             <button
               key={category}
               type="button"
-              className="hero-cat-btn"
+              className={appliedFilters.category === category ? "hero-cat-btn active" : "hero-cat-btn"}
               onClick={() => {
                 setSelectedCategory(category);
                 setAppliedFilters((prev) => ({ ...prev, category }));
@@ -291,15 +275,14 @@ export default function MarketplacePage() {
                     <article className="estab-carousel-card">
                       <div className="carousel-cover-wrap">
                         <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" />
-                        {item.reviewsCount > 0 ? <span className="carousel-rating-pill">{item.rating.toFixed(1)}</span> : null}
+                        {item.reviewsCount > 0 ? (
+                          <span className="carousel-rating-pill">
+                            <Star size={13} className="rating-pill-star" />
+                            <span>{item.rating.toFixed(1)}</span>
+                          </span>
+                        ) : null}
                       </div>
                       <h3>{item.name}</h3>
-                      {item.reviewsCount > 0 ? (
-                        <div className="market-rating-line">
-                          <Star size={14} className="rating-star-icon" />
-                          <span>{item.rating.toFixed(1)}</span>
-                        </div>
-                      ) : null}
                       <p className="market-address">{item.city ? `${item.city}${item.state ? ` - ${item.state}` : ""}` : item.address}</p>
                       <p className="price-from">{item.startingPrice > 0 ? `A partir de ${formatMoney(item.startingPrice)}` : "Consulte valores"}</p>
                     </article>
@@ -312,6 +295,26 @@ export default function MarketplacePage() {
 
         {!loading && !error ? (
           <section className="market-grid-section" ref={filteredCardsRef}>
+            <form className="booksy-search-panel market-estab-filters" onSubmit={handleApplyFilters}>
+              <div className="search-cell wide">
+                <label><Search size={14} /> Qual servico?</label>
+                <input
+                  value={searchService}
+                  onChange={(event) => setSearchService(event.target.value)}
+                  placeholder="Corte, escova, manicure, consulta..."
+                />
+              </div>
+              <div className="search-cell">
+                <label><MapPin size={14} /> Onde?</label>
+                <input
+                  value={searchWhere}
+                  onChange={(event) => setSearchWhere(event.target.value)}
+                  placeholder="Cidade ou bairro"
+                />
+              </div>
+              <button className="search-submit-btn" type="submit">Buscar</button>
+            </form>
+
             <div className="list-header">
               <h2>Estabelecimentos</h2>
             </div>
@@ -329,15 +332,14 @@ export default function MarketplacePage() {
                     <article className="estab-grid-card">
                       <div className="carousel-cover-wrap">
                         <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" />
-                        {item.reviewsCount > 0 ? <span className="carousel-rating-pill">{item.rating.toFixed(1)}</span> : null}
+                        {item.reviewsCount > 0 ? (
+                          <span className="carousel-rating-pill">
+                            <Star size={13} className="rating-pill-star" />
+                            <span>{item.rating.toFixed(1)}</span>
+                          </span>
+                        ) : null}
                       </div>
                       <h3>{item.name}</h3>
-                      {item.reviewsCount > 0 ? (
-                        <div className="market-rating-line">
-                          <Star size={14} className="rating-star-icon" />
-                          <span>{item.rating.toFixed(1)}</span>
-                        </div>
-                      ) : null}
                       <p className="market-address">{item.city ? `${item.city}${item.state ? ` - ${item.state}` : ""}` : item.address}</p>
                       <p className="market-description">{item.description}</p>
                       <p className="price-from">{item.startingPrice > 0 ? `A partir de ${formatMoney(item.startingPrice)}` : "Consulte valores"}</p>

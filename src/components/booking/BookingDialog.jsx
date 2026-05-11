@@ -805,7 +805,7 @@ export default function BookingDialog({
       setLastName(cleanName);
       setLastWhatsapp(customerWhatsapp.trim());
       onSuccess?.(createdIds[0]);
-      onClose?.();
+      onClose?.("success");
     } catch (submitError) {
       setError(`Erro ao agendar: ${submitError.message}`);
     } finally {
@@ -856,7 +856,7 @@ export default function BookingDialog({
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={() => !saving && !askingCustomer && onClose?.()} maxWidth={860}>
+      <Modal isOpen={isOpen} onClose={() => !saving && !askingCustomer && onClose?.("dismiss")} maxWidth={860}>
         <div className="booking-dialog-modern">
           <header className="booking-modern-head">
             <div className="booking-head-left" aria-hidden="true">
@@ -872,7 +872,7 @@ export default function BookingDialog({
             <div className="booking-head-right">
               <button
                 className="booking-icon-circle"
-                onClick={() => !saving && !askingCustomer && onClose?.()}
+                onClick={() => !saving && !askingCustomer && onClose?.("dismiss")}
                 disabled={saving || askingCustomer}
                 type="button"
               >

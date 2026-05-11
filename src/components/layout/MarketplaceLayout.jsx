@@ -9,9 +9,14 @@ export default function MarketplaceLayout({ children, hideTopbar = false, fullWi
             <img src="/assets/brand/icon-mark.png" alt="Bora Cuidar" className="brand-mark" />
             <span>Bora Cuidar</span>
           </Link>
-          <a className="signin-btn" href="https://boracuidar.app/signin">
-            Entrar
-          </a>
+          <div className="topbar-actions">
+            <a className="about-btn" href="https://business.boracuidar.app">
+              Sobre
+            </a>
+            <a className="signin-btn" href="https://business.boracuidar.app/signin">
+              Entrar
+            </a>
+          </div>
         </header>
       ) : null}
       <main className={fullWidth ? "main-shell full" : "main-shell"}>{children}</main>

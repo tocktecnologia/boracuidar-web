@@ -1,7 +1,7 @@
 ﻿@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
 
 :root {
-  --bg: #f2f5f8;
+  --bg: #ffffff;
   --surface: #ffffff;
   --surface-soft: #f7f9fc;
   --text: #1c2434;
@@ -68,7 +68,7 @@ textarea:focus {
 }
 
 .hero-topbar-shell {
-  background: #f1f3f6;
+  background: #ffffff;
 }
 
 .topbar {
@@ -101,7 +101,11 @@ textarea:focus {
 }
 
 .hero-topbar .signin-btn {
-  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+}
+
+.hero-topbar .about-btn {
   background: rgba(255, 255, 255, 0.13);
   color: #fff;
 }
@@ -128,7 +132,23 @@ textarea:focus {
 
 .signin-btn {
   border-radius: 999px;
-  border: 1px solid #dce5ef;
+  border: 0;
+  background: #fff;
+  color: #1e2b41;
+  padding: 8px 14px;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.about-btn {
+  border-radius: 999px;
+  border: 0;
   background: #fff;
   color: #1e2b41;
   padding: 8px 14px;
@@ -203,7 +223,7 @@ p {
 
 .ghost-btn {
   background: #fff;
-  border: 1px solid var(--line);
+  border: 0;
   color: #324158;
 }
 
@@ -326,6 +346,15 @@ p {
   animation: heroFadeUp 0.75s ease-out 0.15s both;
 }
 
+.booksy-search-panel.market-estab-filters {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e1e9f2;
+  backdrop-filter: none;
+  margin-bottom: 14px;
+  animation: none;
+}
+
 .search-cell {
   display: grid;
   gap: 6px;
@@ -367,7 +396,7 @@ p {
 }
 
 .hero-cat-btn {
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  border: 0;
   background: rgba(11, 18, 31, 0.24);
   color: rgba(255, 255, 255, 0.86);
   border-radius: 999px;
@@ -379,6 +408,11 @@ p {
 
 .hero-cat-btn:hover {
   background: rgba(255, 255, 255, 0.18);
+}
+
+.hero-cat-btn.active {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
 }
 
 .market-content-shell {
@@ -401,7 +435,7 @@ p {
   gap: 8px;
 }
 
-.filter-group > span {
+.filter-group>span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -456,7 +490,7 @@ p {
   width: 36px;
   height: 36px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 0;
   background: #fff;
   color: #304257;
   display: inline-flex;
@@ -478,13 +512,13 @@ p {
   min-width: 278px;
   max-width: 278px;
   background: #fff;
-  border: 1px solid #dae3ec;
+  border: 0;
   border-radius: 14px;
   padding: 10px;
   display: grid;
   gap: 12px;
   scroll-snap-align: start;
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
 .estab-carousel-card-link,
@@ -504,7 +538,6 @@ p {
 .estab-carousel-card-link:hover .estab-carousel-card,
 .estab-grid-card-link:hover .estab-grid-card {
   transform: translateY(-3px);
-  border-color: #bccde0;
   box-shadow: 0 18px 34px rgba(17, 29, 46, 0.1);
 }
 
@@ -521,14 +554,22 @@ p {
 
 .carousel-rating-pill {
   position: absolute;
-  right: 8px;
+  left: 8px;
   top: 8px;
   border-radius: 999px;
-  padding: 5px 8px;
-  background: rgba(10, 22, 39, 0.72);
+  padding: 5px 9px;
+  background: rgba(10, 22, 39, 0.15);
   color: #fff;
   font-size: 0.84rem;
   font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rating-pill-star {
+  color: #f59e0b;
+  fill: #f59e0b;
 }
 
 .market-rating-line {
@@ -602,12 +643,12 @@ p {
 .estab-grid-card {
   height: 100%;
   background: #fff;
-  border: 1px solid #dce5ef;
+  border: 0;
   border-radius: 14px;
   padding: 10px;
   display: grid;
   gap: 12px;
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
 .estab-grid-card h3 {
@@ -695,6 +736,7 @@ p {
   from {
     transform: scale(1);
   }
+
   to {
     transform: scale(1.06);
   }
@@ -705,6 +747,7 @@ p {
     opacity: 0;
     transform: translateY(16px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -731,7 +774,7 @@ p {
 }
 
 .market-signin-btn {
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 0;
   color: #fff;
 }
 
@@ -1287,7 +1330,7 @@ p {
   padding: 11px;
 }
 
-.service-row > div:last-child {
+.service-row>div:last-child {
   display: grid;
   justify-items: end;
   gap: 4px;

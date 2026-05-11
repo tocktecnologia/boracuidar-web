@@ -178,8 +178,9 @@ export default function MarketplaceServiceBookingPage() {
         initialServiceId={service.id}
         initialCustomerName={prefill.name}
         initialCustomerWhatsapp={prefill.whatsapp}
-        onClose={() => {
+        onClose={(reason) => {
           setBookingOpen(false);
+          if (reason === "success") return;
           navigate(closeTarget, { replace: true });
         }}
         onSuccess={handleBookingSuccess}
