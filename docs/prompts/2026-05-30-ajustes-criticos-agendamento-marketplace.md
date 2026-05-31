@@ -68,3 +68,15 @@ coloque especificamente  esse prompt e todas a interações  que eu fizer nele  em
   - diretorio remoto: `/`
   - removidos: `26`
   - enviados: `30`
+
+### 2026-05-30T00:00-03:00 - Usuario (erro no agendamento)
+- Reportou erro ao confirmar agendamento no dialogo: `Erro ao agendar: Cannot read properties of undefined (reading 'path')`.
+
+### 2026-05-30T00:00-03:00 - Assistente (correcao)
+- Corrigiu `createSchedulesAtomically` em `src/lib/firestore.js` removendo leitura transacional com `transaction.get(query(...))`.
+- Substituiu por leitura transacional via `DocumentReference` (`transaction.get(docRef)`), mantendo as validacoes de conflito e locks.
+- Validou com `npm run lint` e `npm run build`.
+- Fez deploy do `boracuidar-web` com manutencao automatica:
+  - remoto: `/`
+  - enviados: `30`
+  - removidos: `29`

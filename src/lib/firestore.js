@@ -766,13 +766,26 @@ export async function createSchedulesAtomically({
     }
   }
 
-  await runTransaction(db, async (transaction) => {
-    const daySchedulesSnapshot = await transaction.get(
-      query(collection(db, "agendamentos"), where("data_agendamento", "==", normalizedDateKey)),
-    );
+  const existingDayRows = await queryRows({
+    table: "agendamentos",
+    conditions: [
+      { field: "business_id", operator: "eq", value: normalizedBusinessId },
+      { field: "trabalhador_id", operator: "eq", value: normalizedWorkerId },
+      { field: "data_agendamento", operator: "eq", value: normalizedDateKey },
+    ],
+  });
 
-    for (const docSnap of daySchedulesSnapshot.docs) {
-      const existing = decodeDocRow("agendamentos", docSnap);
+  const existingScheduleRefs = existingDayRows
+    .map((row) => String(row?.id ?? "").trim())
+    .filter(Boolean)
+    .map((id) => doc(db, "agendamentos", id));
+
+  await runTransaction(db, async (transaction) => {
+    for (const scheduleRef of existingScheduleRefs) {
+      const existingSnapshot = await transaction.get(scheduleRef);
+      if (!existingSnapshot.exists()) continue;
+
+      const existing = decodeDocRow("agendamentos", existingSnapshot);
       if (String(existing.business_id ?? "").trim() !== normalizedBusinessId) continue;
       if (Number(existing.trabalhador_id) !== normalizedWorkerId) continue;
       if (isCancelledStatus(existing.status)) continue;
