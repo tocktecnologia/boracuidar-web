@@ -3,7 +3,7 @@ import { AlertTriangle, Loader2, Search } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import PhoneVerificationDialog from "../components/schedules/PhoneVerificationDialog";
-import { auth } from "../lib/firebase";
+import { auth } from "../lib/firebase-auth";
 import { queryRows, shouldBlockN8nForBusinessRow, toJsonSafe, updateRows } from "../lib/firestore";
 import { asDateOnly, digitsOnly, formatDate, firstText, parseDate, parseTimeOnDate, toInt } from "../lib/marketplace";
 

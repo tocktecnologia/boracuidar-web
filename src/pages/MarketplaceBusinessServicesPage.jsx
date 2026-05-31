@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { CalendarClock, MapPin, Search } from "lucide-react";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
-import BookingDialog from "../components/booking/BookingDialog";
 import { queryRows } from "../lib/firestore";
-import { firstText, formatMoney, toInt } from "../lib/marketplace";
+import { digitsOnly, firstText, formatMoney, toInt } from "../lib/marketplace";
+
+const BookingDialog = lazy(() => import("../components/booking/BookingDialog"));
 
 function useBusinessId() {
   const { search } = useLocation();
@@ -123,6 +124,11 @@ export default function MarketplaceBusinessServicesPage() {
 
   const businessName = firstText([business?.nome, page?.title]) ?? "Estabelecimento";
   const address = firstText([page?.address, business?.endereco, business?.cidade]) ?? "Endereco em atualizacao";
+  const whatsappBotPhone = firstText([business?.whatsapp_bot, business?.whatsapp, business?.telefone, page?.contact, page?.phone]);
+  const whatsappBotDigits = digitsOnly(whatsappBotPhone);
+  const mySchedulesWhatsappLink = whatsappBotDigits
+    ? `https://wa.me/${whatsappBotDigits}?text=${encodeURIComponent("/meus_agendamentos")}`
+    : null;
 
   function openBooking(serviceId) {
     setBookingServiceId(serviceId ?? null);
@@ -160,12 +166,21 @@ export default function MarketplaceBusinessServicesPage() {
     <MarketplaceLayout hideTopbar fullWidth>
       <section className="business-services-shortcut">
         <header className="business-services-shortcut-head">
-          <div>
+          <div className="business-services-shortcut-meta">
             <h1>{businessName}</h1>
             <p className="business-address-line">
               <MapPin size={14} />
               {address}
             </p>
+            {mySchedulesWhatsappLink ? (
+              <a className="ghost-btn business-services-my-schedules" href={mySchedulesWhatsappLink} target="_blank" rel="noreferrer">
+                Meus agendamentos
+              </a>
+            ) : (
+              <Link className="ghost-btn business-services-my-schedules" to={`/marketplace/meus-agendamentos?businessId=${encodeURIComponent(businessId)}`}>
+                Meus agendamentos
+              </Link>
+            )}
           </div>
           <Link
             className="business-logo-shortcut"
@@ -205,15 +220,19 @@ export default function MarketplaceBusinessServicesPage() {
         </section>
       </section>
 
-      <BookingDialog
-        isOpen={bookingOpen}
-        businessId={businessId}
-        initialServiceId={bookingServiceId}
-        initialCustomerName={prefill.name}
-        initialCustomerWhatsapp={prefill.whatsapp}
-        onClose={() => setBookingOpen(false)}
-        onSuccess={handleBookingSuccess}
-      />
+      {bookingOpen ? (
+        <Suspense fallback={null}>
+          <BookingDialog
+            isOpen={bookingOpen}
+            businessId={businessId}
+            initialServiceId={bookingServiceId}
+            initialCustomerName={prefill.name}
+            initialCustomerWhatsapp={prefill.whatsapp}
+            onClose={() => setBookingOpen(false)}
+            onSuccess={handleBookingSuccess}
+          />
+        </Suspense>
+      ) : null}
     </MarketplaceLayout>
   );
 }

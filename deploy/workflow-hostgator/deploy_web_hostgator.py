@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import ftplib
 import hashlib
+import io
 import json
 import os
 import posixpath
@@ -33,6 +34,7 @@ from typing import Dict, Iterable, List, Set, Tuple
 REQUIRED_SECRETS = ("WEB_FTP_SERVER", "WEB_FTP_USERNAME", "WEB_FTP_PASSWORD")
 DEFAULT_STATE_FILE = ".ftp-deploy-sync-state-web.json"
 DEFAULT_SECRETS_FILE = "secrets.env"
+DEFAULT_MAINTENANCE_LOGO_FILENAME = "_maintenance_logo.png"
 ROOT_PRESERVE_NAMES = {".ftpquota", ".well-known", "cgi-bin"}
 FTP_RETRY_ERRORS = ftplib.all_errors + (socket.timeout, TimeoutError, EOFError, OSError)
 
@@ -41,6 +43,15 @@ FTP_RETRY_ERRORS = ftplib.all_errors + (socket.timeout, TimeoutError, EOFError, 
 class DeployTarget:
     local_path: Path
     relative_posix: str
+
+
+@dataclass(frozen=True)
+class MaintenanceSettings:
+    enabled: bool
+    title: str
+    message: str
+    refresh_seconds: int
+    logo_file_name: str
 
 
 class TolerantFTP_TLS(ftplib.FTP_TLS):
@@ -114,6 +125,39 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=180,
         help="Timeout FTPS em segundos. Default: 180",
+    )
+    parser.add_argument(
+        "--maintenance-page",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Mostra uma pagina de manutencao durante o deploy e troca para o site "
+            "somente no final (padrao: habilitado). Use --no-maintenance-page para desativar."
+        ),
+    )
+    parser.add_argument(
+        "--maintenance-title",
+        default="Bora Cuidar em manutencao",
+        help="Titulo da pagina de manutencao.",
+    )
+    parser.add_argument(
+        "--maintenance-message",
+        default="Estamos em manutencao e logo voltaremos a ficar disponiveis.",
+        help="Mensagem principal da pagina de manutencao.",
+    )
+    parser.add_argument(
+        "--maintenance-refresh-seconds",
+        type=int,
+        default=8,
+        help="Intervalo de auto-refresh da pagina de manutencao (segundos).",
+    )
+    parser.add_argument(
+        "--maintenance-logo-file",
+        default=DEFAULT_MAINTENANCE_LOGO_FILENAME,
+        help=(
+            "Nome do arquivo da logo de manutencao no diretorio remoto do site "
+            "(ex: _maintenance_logo.png)."
+        ),
     )
     return parser.parse_args()
 
@@ -225,6 +269,123 @@ def sha1_file(path: Path) -> str:
 
 def should_exclude(relative_posix: str) -> bool:
     return relative_posix.endswith(".map")
+
+
+def normalize_file_name(value: str, fallback: str) -> str:
+    text = (value or "").strip().replace("\\", "/")
+    if not text:
+        return fallback
+    text = posixpath.basename(text)
+    return text or fallback
+
+
+def _pick_maintenance_logo_target(targets: List[DeployTarget]) -> DeployTarget | None:
+    preferred = (
+        "assets/brand/logo-horizontal-light.png",
+        "assets/brand/icon-mark.png",
+        "favicon.ico",
+        "favicon.png",
+    )
+    by_relative = {target.relative_posix: target for target in targets}
+    for relative in preferred:
+        target = by_relative.get(relative)
+        if target is not None and target.local_path.exists():
+            return target
+
+    for target in targets:
+        relative = target.relative_posix.lower()
+        if "logo" in relative and relative.endswith((".png", ".jpg", ".jpeg", ".webp", ".svg")):
+            return target
+    return None
+
+
+def build_maintenance_html(settings: MaintenanceSettings) -> str:
+    refresh = max(3, settings.refresh_seconds)
+    title = (settings.title or "Bora Cuidar em manutencao").strip()
+    message = (settings.message or "Estamos em manutencao e logo voltaremos a ficar disponiveis.").strip()
+    logo_html = ""
+    logo_file = normalize_file_name(settings.logo_file_name, DEFAULT_MAINTENANCE_LOGO_FILENAME) if settings.logo_file_name else ""
+    if logo_file:
+        logo_html = (
+            f'<img src="/{logo_file}" alt="Logo Bora Cuidar" '
+            'style="max-width:220px;max-height:120px;object-fit:contain;margin-bottom:20px;" />'
+        )
+
+    return f"""<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta http-equiv="refresh" content="{refresh}" />
+    <style>
+      :root {{
+        color-scheme: light;
+      }}
+      * {{
+        box-sizing: border-box;
+      }}
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #0f172a;
+        background:
+          radial-gradient(circle at top right, #dbeafe 0%, transparent 40%),
+          radial-gradient(circle at bottom left, #dcfce7 0%, transparent 45%),
+          #f8fafc;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+      }}
+      .card {{
+        width: min(620px, 100%);
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        padding: 32px 26px;
+        text-align: center;
+      }}
+      h1 {{
+        margin: 0 0 10px;
+        font-size: 1.4rem;
+      }}
+      p {{
+        margin: 0;
+        color: #334155;
+        line-height: 1.55;
+      }}
+      .spinner {{
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        border: 3px solid #cbd5e1;
+        border-top-color: #2563eb;
+        margin: 18px auto 0;
+        animation: spin 0.9s linear infinite;
+      }}
+      @keyframes spin {{
+        to {{ transform: rotate(360deg); }}
+      }}
+      .hint {{
+        margin-top: 12px;
+        font-size: 0.83rem;
+        color: #64748b;
+      }}
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      {logo_html}
+      <h1>{title}</h1>
+      <p>{message}</p>
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="hint">Atualizacao automatica a cada {refresh} segundos.</p>
+    </main>
+  </body>
+</html>
+"""
 
 
 def collect_deploy_targets(build_dir: Path) -> List[DeployTarget]:
@@ -523,10 +684,19 @@ def deploy_via_ftps(
     configured_server_dir: str | None,
     targets: List[DeployTarget],
     previous_state: Dict[str, Dict[str, str]],
+    maintenance: MaintenanceSettings,
 ) -> Tuple[Dict[str, Dict[str, str]], int, int, str]:
     current_state: Dict[str, Dict[str, str]] = {}
     for target in targets:
         current_state[target.relative_posix] = {"sha1": sha1_file(target.local_path)}
+
+    deferred_targets: List[DeployTarget] = []
+    regular_targets: List[DeployTarget] = []
+    for target in targets:
+        if target.relative_posix == "index.html":
+            deferred_targets.append(target)
+        else:
+            regular_targets.append(target)
 
     ftp = connect_ftps(
         server=server,
@@ -540,6 +710,44 @@ def deploy_via_ftps(
     deleted_count = 0
     remote_dir_cache: Set[str] = set()
     resolved_server_dir = "/"
+    maintenance_logo_name = normalize_file_name(maintenance.logo_file_name, DEFAULT_MAINTENANCE_LOGO_FILENAME)
+
+    def publish_maintenance_page() -> Set[str]:
+        preserved: Set[str] = {"index.html"}
+        logo_uploaded = False
+
+        if maintenance.enabled and deferred_targets:
+            logo_target = _pick_maintenance_logo_target(targets)
+            if logo_target is not None:
+                try:
+                    logo_remote_path = remote_join(resolved_server_dir, maintenance_logo_name)
+                    ensure_remote_dirs(ftp, logo_remote_path, remote_dir_cache)
+                    with logo_target.local_path.open("rb") as logo_file:
+                        ftp.storbinary(f"STOR {logo_remote_path}", logo_file)
+                    logo_uploaded = True
+                    preserved.add(maintenance_logo_name)
+                    log(f"Logo de manutencao publicada em {logo_remote_path}")
+                except FTP_RETRY_ERRORS as exc:
+                    log(f"Aviso: falha ao publicar logo de manutencao ({exc}).")
+
+            html = build_maintenance_html(
+                MaintenanceSettings(
+                    enabled=maintenance.enabled,
+                    title=maintenance.title,
+                    message=maintenance.message,
+                    refresh_seconds=maintenance.refresh_seconds,
+                    logo_file_name=maintenance_logo_name if logo_uploaded else "",
+                ),
+            )
+
+            maintenance_index_remote = remote_join(resolved_server_dir, "index.html")
+            ensure_remote_dirs(ftp, maintenance_index_remote, remote_dir_cache)
+            ftp.storbinary(
+                f"STOR {maintenance_index_remote}",
+                io.BytesIO(html.encode("utf-8")),
+            )
+            log("Pagina de manutencao publicada. Deploy em andamento...")
+        return preserved
 
     try:
         resolved_server_dir = resolve_server_dir(
@@ -549,7 +757,13 @@ def deploy_via_ftps(
         )
 
         known_remote_relatives = set(previous_state.keys()).union(target.relative_posix for target in targets)
-        preserve_names = ROOT_PRESERVE_NAMES if normalize_remote_dir(resolved_server_dir) == "/" else set()
+        preserve_names = set(ROOT_PRESERVE_NAMES if normalize_remote_dir(resolved_server_dir) == "/" else set())
+
+        if maintenance.enabled and deferred_targets:
+            try:
+                preserve_names.update(publish_maintenance_page())
+            except FTP_RETRY_ERRORS as exc:
+                log(f"Aviso: nao foi possivel publicar manutencao antes da limpeza ({exc}).")
 
         try:
             deleted_count = purge_remote_directory(
@@ -573,6 +787,7 @@ def deploy_via_ftps(
                 port=port,
                 timeout=timeout,
             )
+            remote_dir_cache.clear()
             resolved_server_dir = resolve_server_dir(
                 ftp,
                 cli_server_dir=cli_server_dir,
@@ -584,10 +799,17 @@ def deploy_via_ftps(
                 relative_paths=known_remote_relatives,
             )
 
+        if maintenance.enabled and deferred_targets:
+            try:
+                publish_maintenance_page()
+            except FTP_RETRY_ERRORS as exc:
+                log(f"Aviso: nao foi possivel republicar manutencao apos limpeza ({exc}).")
+
         log(f"Arquivos removidos no remoto antes do upload: {deleted_count}")
 
+        upload_plan = [*regular_targets, *deferred_targets]
         max_upload_retries = 4
-        for target in targets:
+        for target in upload_plan:
             remote_path = remote_join(resolved_server_dir, target.relative_posix)
             for attempt in range(1, max_upload_retries + 1):
                 try:
@@ -636,6 +858,13 @@ def main() -> None:
     build_dir = (repo_root / args.build_dir).resolve() if not args.build_dir.is_absolute() else args.build_dir.resolve()
     state_file = (repo_root / args.state_file).resolve() if not args.state_file.is_absolute() else args.state_file.resolve()
     secrets_file = resolve_secrets_file(script_dir)
+    maintenance_settings = MaintenanceSettings(
+        enabled=bool(args.maintenance_page),
+        title=args.maintenance_title,
+        message=args.maintenance_message,
+        refresh_seconds=max(3, args.maintenance_refresh_seconds),
+        logo_file_name=normalize_file_name(args.maintenance_logo_file, DEFAULT_MAINTENANCE_LOGO_FILENAME),
+    )
 
     log(f"Repo root: {repo_root}")
     log(f"Build dir: {build_dir}")
@@ -689,6 +918,7 @@ def main() -> None:
         configured_server_dir=configured_server_dir,
         targets=targets,
         previous_state=previous_state,
+        maintenance=maintenance_settings,
     )
     save_state(state_file, new_state)
 

@@ -3,7 +3,10 @@ import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Plus, UserRound, X } 
 import Modal from "../common/Modal";
 import {
   checkScheduleCreationLimit,
+  createSchedulesAtomically,
   insertRow,
+  isBookingSlotUnavailableError,
+  isBookingSlotTakenError,
   queryRows,
   reminderCountForBusinessRow,
   shouldBlockN8nForBusinessRow,
@@ -131,7 +134,8 @@ export default function BookingDialog({
   const [selectedWorkerId, setSelectedWorkerId] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedStart, setSelectedStart] = useState(null);
-  const [availableStarts, setAvailableStarts] = useState([]);
+  const [slotStates, setSlotStates] = useState([]);
+  const [slotConflict, setSlotConflict] = useState(false);
 
   const [dateOffset, setDateOffset] = useState(0);
   const [slotOffset, setSlotOffset] = useState(0);
@@ -149,6 +153,7 @@ export default function BookingDialog({
 
   const dayCacheRef = useRef(new Map());
   const slotsCacheRef = useRef(new Map());
+  const scheduleRowsCacheRef = useRef(new Map());
   const refreshTokenRef = useRef(0);
 
   const serviceById = useMemo(() => {
@@ -179,16 +184,16 @@ export default function BookingDialog({
     [workers],
   );
 
-  const startsByPeriod = useMemo(
-    () => availableStarts.filter((start) => matchesPeriod(start, period)),
-    [availableStarts, period],
+  const slotsByPeriod = useMemo(
+    () => slotStates.filter((slot) => matchesPeriod(slot.start, period)),
+    [slotStates, period],
   );
 
-  const visibleStarts = useMemo(() => {
-    const maxOffset = Math.max(0, Math.floor(Math.max(0, startsByPeriod.length - 1) / SLOTS_PER_PAGE) * SLOTS_PER_PAGE);
+  const visibleSlots = useMemo(() => {
+    const maxOffset = Math.max(0, Math.floor(Math.max(0, slotsByPeriod.length - 1) / SLOTS_PER_PAGE) * SLOTS_PER_PAGE);
     const safeOffset = Math.min(slotOffset, maxOffset);
-    return startsByPeriod.slice(safeOffset, safeOffset + SLOTS_PER_PAGE);
-  }, [slotOffset, startsByPeriod]);
+    return slotsByPeriod.slice(safeOffset, safeOffset + SLOTS_PER_PAGE);
+  }, [slotOffset, slotsByPeriod]);
 
   const timelineRows = useMemo(() => {
     if (!selectedStart) return [];
@@ -207,7 +212,29 @@ export default function BookingDialog({
   function clearAvailabilityCache() {
     dayCacheRef.current.clear();
     slotsCacheRef.current.clear();
+    scheduleRowsCacheRef.current.clear();
     setDateCounts({});
+    setSlotStates([]);
+  }
+
+  async function schedulesForWorkerDay(workerId, date) {
+    const targetDateKey = dateKey(date);
+    const key = `${workerId}|${targetDateKey}`;
+    if (scheduleRowsCacheRef.current.has(key)) {
+      return scheduleRowsCacheRef.current.get(key);
+    }
+
+    const rows = await queryRows({
+      table: "agendamentos",
+      conditions: [
+        { field: "trabalhador_id", operator: "eq", value: workerId },
+        { field: "business_id", operator: "eq", value: businessId },
+        { field: "data_agendamento", operator: "eq", value: targetDateKey },
+      ],
+    });
+
+    scheduleRowsCacheRef.current.set(key, rows);
+    return rows;
   }
 
   async function daySchedule(workerId, date) {
@@ -289,13 +316,7 @@ export default function BookingDialog({
       }
     }
 
-    const schedules = await queryRows({
-      table: "agendamentos",
-      conditions: [
-        { field: "trabalhador_id", operator: "eq", value: workerId },
-        { field: "business_id", operator: "eq", value: businessId },
-      ],
-    });
+    const schedules = await schedulesForWorkerDay(workerId, date);
 
     for (const schedule of schedules) {
       if (scheduleDayKey(schedule.data_agendamento) !== targetDateKey) continue;
@@ -322,10 +343,10 @@ export default function BookingDialog({
     return schedule;
   }
 
-  async function availableStartsFor(workerId, date, durationMinutes) {
+  async function slotStatesFor(workerId, date, durationMinutes) {
     const normalizedDate = asDateOnly(date);
     const normalizedDuration = durationMinutes > 0 ? durationMinutes : 30;
-    const key = `${workerId}|${dateKey(normalizedDate)}|${normalizedDuration}`;
+    const key = `${workerId}|${dateKey(normalizedDate)}|${normalizedDuration}|states`;
 
     if (slotsCacheRef.current.has(key)) {
       return slotsCacheRef.current.get(key);
@@ -337,49 +358,59 @@ export default function BookingDialog({
       return [];
     }
 
-    const starts = [];
+    const states = [];
     const now = new Date();
     const lastStart = new Date(schedule.workEnd.getTime() - normalizedDuration * 60000);
     let cursor = new Date(schedule.workStart);
 
     while (cursor <= lastStart) {
       const end = new Date(cursor.getTime() + normalizedDuration * 60000);
-      const isPast = cursor < now || end < now;
+      const isPast = cursor < now || end <= now;
       const hitsBreak =
         schedule.breakStart &&
         schedule.breakEnd &&
         overlaps(cursor, end, schedule.breakStart, schedule.breakEnd);
       const isBlocked = schedule.blocked.some((interval) => overlaps(cursor, end, interval.start, interval.end));
 
-      if (!isPast && !hitsBreak && !isBlocked) {
-        starts.push(new Date(cursor));
+      if (!isPast && !hitsBreak) {
+        states.push({
+          start: new Date(cursor),
+          available: !isBlocked,
+          occupied: isBlocked,
+        });
       }
 
       cursor = new Date(cursor.getTime() + 30 * 60000);
     }
 
-    slotsCacheRef.current.set(key, starts);
-    return starts;
+    slotsCacheRef.current.set(key, states);
+    return states;
   }
 
-  async function refreshStarts({ workerId, date, serviceIds, keepSelected = false, preferredStart = null }) {
+  async function availableStartsFor(workerId, date, durationMinutes) {
+    const states = await slotStatesFor(workerId, date, durationMinutes);
+    return states.filter((slot) => slot.available).map((slot) => slot.start);
+  }
+
+  async function refreshStarts({ workerId, date, serviceIds, keepSelected = false, preferredStart = null, resetSlotOffset = true }) {
     const requestId = refreshTokenRef.current + 1;
     refreshTokenRef.current = requestId;
 
     if (!workerId || !date || serviceIds.length === 0) {
-      setAvailableStarts([]);
+      setSlotStates([]);
       setSelectedStart(null);
-      setSlotOffset(0);
+      if (resetSlotOffset) setSlotOffset(0);
       return [];
     }
 
     const nextDuration = serviceIds.reduce((sum, id) => sum + serviceDuration(serviceById[id]), 0);
-    const starts = await availableStartsFor(workerId, date, nextDuration);
+    const nextSlotStates = await slotStatesFor(workerId, date, nextDuration);
+    const starts = nextSlotStates.filter((slot) => slot.available).map((slot) => slot.start);
 
     if (refreshTokenRef.current !== requestId) return starts;
 
-    setAvailableStarts(starts);
-    setSlotOffset(0);
+    setSlotStates(nextSlotStates);
+    if (resetSlotOffset) setSlotOffset(0);
 
     if (starts.length === 0) {
       setSelectedStart(null);
@@ -413,6 +444,7 @@ export default function BookingDialog({
       setSaving(false);
       setAskingCustomer(false);
       setError("");
+      setSlotConflict(false);
       setAddServiceOpen(false);
       setServicesExpanded(false);
       setCustomerOpen(false);
@@ -504,7 +536,7 @@ export default function BookingDialog({
           setSelectedWorkerId(rawWorkers[0]?.id ?? null);
           setSelectedDate(nowToday);
           setSelectedStart(null);
-          setAvailableStarts([]);
+          setSlotStates([]);
           setPeriod("manha");
           setDateOffset(0);
           setSlotOffset(0);
@@ -540,7 +572,7 @@ export default function BookingDialog({
     return () => {
       active = false;
     };
-  }, [businessId, initialCustomerName, initialCustomerWhatsapp, initialServiceId, isOpen]);
+  }, [businessId, initialCustomerName, initialCustomerWhatsapp, initialServiceId, isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isOpen || !selectedWorkerId || loading) return;
@@ -548,30 +580,68 @@ export default function BookingDialog({
     let active = true;
     const dates = Array.from({ length: WINDOW_DAYS }, (_, index) => new Date(today.getTime() + (dateOffset + index) * 86400000));
     const duration = totalDuration > 0 ? totalDuration : 30;
-
-    Promise.all(
-      dates.map(async (date) => {
-        const slots = await availableStartsFor(selectedWorkerId, date, duration);
-        return [dateKey(date), slots.length];
-      }),
-    ).then((entries) => {
-      if (!active) return;
-      setDateCounts((current) => {
-        const next = { ...current };
-        for (const [key, count] of entries) {
-          next[key] = count;
-        }
-        return next;
+    const timeoutId = window.setTimeout(() => {
+      Promise.all(
+        dates.map(async (date) => {
+          const slots = await availableStartsFor(selectedWorkerId, date, duration);
+          return [dateKey(date), slots.length];
+        }),
+      ).then((entries) => {
+        if (!active) return;
+        setDateCounts((current) => {
+          const next = { ...current };
+          for (const [key, count] of entries) {
+            next[key] = count;
+          }
+          return next;
+        });
       });
-    });
+    }, 250);
 
     return () => {
       active = false;
+      window.clearTimeout(timeoutId);
     };
-  }, [isOpen, selectedWorkerId, dateOffset, today, totalDuration, loading]);
+  }, [isOpen, selectedWorkerId, dateOffset, today, totalDuration, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isOpen || loading || saving || askingCustomer) return;
+    if (!selectedWorkerId || !selectedDate || selectedServiceIds.length === 0) return;
+
+    let active = true;
+    const refreshIntervalMs = 20000;
+
+    const syncLiveAvailability = async () => {
+      dayCacheRef.current.clear();
+      slotsCacheRef.current.clear();
+      scheduleRowsCacheRef.current.clear();
+
+      const currentStart = selectedStart ? new Date(selectedStart) : null;
+      const starts = await refreshStarts({
+        workerId: selectedWorkerId,
+        date: selectedDate,
+        serviceIds: selectedServiceIds,
+        keepSelected: true,
+        preferredStart: currentStart,
+        resetSlotOffset: false,
+      });
+
+      if (!active || !currentStart) return;
+      if (!starts.some((start) => sameMinute(start, currentStart))) {
+        setSlotConflict(true);
+      }
+    };
+
+    const timer = window.setInterval(syncLiveAvailability, refreshIntervalMs);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [isOpen, loading, saving, askingCustomer, selectedWorkerId, selectedDate, selectedServiceIds, selectedStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSelectDate(date) {
     if (saving) return;
+    setSlotConflict(false);
     setSelectedDate(date);
     setSelectedStart(null);
     setSlotOffset(0);
@@ -598,6 +668,7 @@ export default function BookingDialog({
     setSelectedStart(null);
     setSlotOffset(0);
     setError("");
+    setSlotConflict(false);
 
     await refreshStarts({
       workerId,
@@ -617,6 +688,7 @@ export default function BookingDialog({
 
   async function handleOpenAddService() {
     if (saving) return;
+    setSlotConflict(false);
     if (!selectedWorkerId || !selectedDate || !selectedStart) {
       setError("Selecione profissional, data e horario antes de adicionar.");
       return;
@@ -648,6 +720,7 @@ export default function BookingDialog({
   }
 
   async function handleAddService(serviceId) {
+    setSlotConflict(false);
     const nextIds = [...selectedServiceIds, serviceId];
     const stillFits = await fitsCurrentSelection(nextIds);
     if (!stillFits) {
@@ -671,6 +744,7 @@ export default function BookingDialog({
   }
 
   async function handleRemoveExtraService(event) {
+    setSlotConflict(false);
     const serviceId = Number(event.currentTarget?.dataset?.serviceId);
     if (!serviceId) return;
     if (selectedServiceIds.length <= 1 || selectedServiceIds[0] === serviceId) return;
@@ -692,6 +766,7 @@ export default function BookingDialog({
 
   function handleStartBooking() {
     if (saving || askingCustomer) return;
+    setSlotConflict(false);
     if (!selectedWorkerId || !selectedDate || !selectedStart || selectedServiceIds.length === 0) {
       setError("Selecione os dados do agendamento primeiro.");
       return;
@@ -704,6 +779,7 @@ export default function BookingDialog({
 
   async function handleCreateBooking() {
     if (saving) return;
+    setSlotConflict(false);
 
     const cleanName = customerName.trim();
     const cleanPhoneDigits = normalizePhoneDigits(customerWhatsapp);
@@ -724,6 +800,26 @@ export default function BookingDialog({
     setError("");
 
     try {
+      const currentStart = selectedStart ? new Date(selectedStart) : null;
+      if (!currentStart || !selectedWorkerId || !selectedDate) {
+        setError("Horario indisponivel. Escolha novamente antes de confirmar.");
+        return;
+      }
+
+      clearAvailabilityCache();
+      const latestStarts = await availableStartsFor(selectedWorkerId, selectedDate, totalDuration > 0 ? totalDuration : 30);
+      if (!latestStarts.some((start) => sameMinute(start, currentStart))) {
+        await refreshStarts({
+          workerId: selectedWorkerId,
+          date: selectedDate,
+          serviceIds: selectedServiceIds,
+          keepSelected: false,
+        });
+        setError("Outra pessoa acabou de reservar esse horario. Escolha um novo horario para continuar.");
+        setSlotConflict(true);
+        return;
+      }
+
       const limitCheck = await checkScheduleCreationLimit({
         businessId,
         additionalSchedules: selectedServiceIds.length,
@@ -742,59 +838,66 @@ export default function BookingDialog({
       const reminderCount = reminderCountForBusinessRow(businessRow);
       const blockN8n = shouldBlockN8nForBusinessRow(businessRow);
 
-      let cursor = new Date(selectedStart);
-      const createdIds = [];
       const selectedDateKey = dateKey(selectedDate);
+      const scheduleRequests = [];
+      let cursor = new Date(selectedStart);
 
       for (const serviceId of selectedServiceIds) {
         const service = serviceById[serviceId];
         if (!service) continue;
 
         const end = new Date(cursor.getTime() + serviceDuration(service) * 60000);
+        scheduleRequests.push({
+          serviceId,
+          startTime: timeLabel(cursor),
+          endTime: timeLabel(end),
+        });
+        cursor = end;
+      }
 
-        const inserted = await insertRow({
-          table: "agendamentos",
+      const insertedSchedules = await createSchedulesAtomically({
+        businessId,
+        workerId: selectedWorkerId,
+        customerName: cleanName,
+        customerPhone: cleanPhoneDigits,
+        dateKey: selectedDateKey,
+        reminderCount,
+        status: "confirmado",
+        schedules: scheduleRequests,
+      });
+
+      const createdIds = [];
+      for (const inserted of insertedSchedules) {
+        const insertedId = toInt(inserted?.id);
+        if (insertedId) {
+          createdIds.push(insertedId);
+        }
+
+        const serviceId = toInt(inserted?.servico_id);
+        const service = serviceById[serviceId];
+        const scheduleStart = String(inserted?.hora_inicio ?? "").trim();
+
+        await insertRow({
+          table: "notifications",
           data: {
             business_id: businessId,
-            trabalhador_id: selectedWorkerId,
-            servico_id: serviceId,
-            cliente_nome: cleanName,
-            cliente_telefone: cleanPhoneDigits,
-            data_agendamento: selectedDateKey,
-            hora_inicio: timeLabel(cursor),
-            hora_fim: timeLabel(end),
-            status: "confirmado",
-            lembrete_count: reminderCount,
+            title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${scheduleStart || "--:--"}!`,
+            message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
+            trabalhador_nome: workerName,
+            type: "agendamento",
           },
         });
 
-        if (inserted?.id) {
-          createdIds.push(inserted.id);
-
-          await insertRow({
-            table: "notifications",
-            data: {
-              business_id: businessId,
-              title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${timeLabel(cursor)}!`,
-              message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
-              trabalhador_nome: workerName,
-              type: "agendamento",
-            },
-          });
-
-          if (!blockN8n) {
-            fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                agendamento: toJsonSafe(inserted),
-                business: toJsonSafe(businessRow),
-              }),
-            }).catch(() => {});
-          }
+        if (!blockN8n) {
+          fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              agendamento: toJsonSafe(inserted),
+              business: toJsonSafe(businessRow),
+            }),
+          }).catch(() => {});
         }
-
-        cursor = end;
       }
 
       if (createdIds.length === 0) {
@@ -804,10 +907,27 @@ export default function BookingDialog({
 
       setLastName(cleanName);
       setLastWhatsapp(customerWhatsapp.trim());
+      setSlotConflict(false);
       onSuccess?.(createdIds[0]);
       onClose?.("success");
     } catch (submitError) {
+      if (isBookingSlotTakenError(submitError) || isBookingSlotUnavailableError(submitError)) {
+        clearAvailabilityCache();
+        await refreshStarts({
+          workerId: selectedWorkerId,
+          date: selectedDate,
+          serviceIds: selectedServiceIds,
+          keepSelected: false,
+        });
+        const message = isBookingSlotTakenError(submitError)
+          ? "Esse horario acabou de ser preenchido por outra pessoa. Selecione outro horario."
+          : submitError.message || "Esse horario nao cabe mais na disponibilidade atual do profissional.";
+        setError(message);
+        setSlotConflict(true);
+        return;
+      }
       setError(`Erro ao agendar: ${submitError.message}`);
+      setSlotConflict(false);
     } finally {
       setAskingCustomer(false);
       setSaving(false);
@@ -819,7 +939,7 @@ export default function BookingDialog({
   const canNextDays = dateOffset < maxDateOffset;
   const datesWindow = Array.from({ length: WINDOW_DAYS }, (_, index) => new Date(today.getTime() + (dateOffset + index) * 86400000));
 
-  const maxSlotOffset = Math.max(0, Math.floor(Math.max(0, startsByPeriod.length - 1) / SLOTS_PER_PAGE) * SLOTS_PER_PAGE);
+  const maxSlotOffset = Math.max(0, Math.floor(Math.max(0, slotsByPeriod.length - 1) / SLOTS_PER_PAGE) * SLOTS_PER_PAGE);
   const canPrevSlots = slotOffset > 0;
   const canNextSlots = slotOffset < maxSlotOffset;
 
@@ -951,7 +1071,7 @@ export default function BookingDialog({
                 </section>
 
                 <section className="booking-slots-row">
-                  {startsByPeriod.length === 0 ? (
+                  {slotsByPeriod.length === 0 ? (
                     <div className="booking-empty-slots">Nao ha horarios disponiveis nesse periodo.</div>
                   ) : (
                     <>
@@ -965,14 +1085,24 @@ export default function BookingDialog({
                       </button>
 
                       <div className="booking-slot-list">
-                        {visibleStarts.map((start) => (
+                        {visibleSlots.map((slot) => (
                           <button
-                            key={start.toISOString()}
-                            className={selectedStart && sameMinute(start, selectedStart) ? "booking-slot-btn active" : "booking-slot-btn"}
-                            onClick={() => setSelectedStart(start)}
+                            key={slot.start.toISOString()}
+                            className={[
+                              "booking-slot-btn",
+                              selectedStart && sameMinute(slot.start, selectedStart) ? "active" : "",
+                              !slot.available ? "occupied" : "",
+                            ].filter(Boolean).join(" ")}
+                            onClick={() => {
+                              if (!slot.available) return;
+                              setSlotConflict(false);
+                              setSelectedStart(slot.start);
+                            }}
+                            disabled={!slot.available}
                             type="button"
                           >
-                            {timeLabel(start)}
+                            <span>{timeLabel(slot.start)}</span>
+                            {!slot.available ? <small>Ocupado</small> : null}
                           </button>
                         ))}
                       </div>
@@ -1094,6 +1224,11 @@ export default function BookingDialog({
               </div>
 
               {error ? <p className="error-text booking-inline-error">{error}</p> : null}
+              {slotConflict ? (
+                <button className="ghost-btn booking-conflict-back" type="button" onClick={() => onClose?.("slot-taken")}>
+                  Voltar para servicos
+                </button>
+              ) : null}
 
               <footer className="booking-modern-foot">
                 <div>
