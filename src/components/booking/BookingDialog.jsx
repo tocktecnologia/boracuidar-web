@@ -12,6 +12,7 @@ import {
   shouldBlockN8nForBusinessRow,
   toJsonSafe,
 } from "../../lib/firestore";
+import { createBookingViaApi, isBookingApiEnabled } from "../../lib/bookingApi";
 import { asDateOnly, firstText, formatMoney, overlaps, parseDate, parseTimeOnDate, sameMinute, toInt, toNumber } from "../../lib/marketplace";
 import { measureAsync, queuePerfEvent } from "../../lib/observability";
 
@@ -827,19 +828,6 @@ export default function BookingDialog({
         return;
       }
 
-      const limitCheck = await measureAsync("booking_check_limit", () => checkScheduleCreationLimit({
-        businessId,
-        additionalSchedules: selectedServiceIds.length,
-        workerId: selectedWorkerId,
-        referenceDate: selectedDate,
-        businessRow,
-      }), { businessId, workerId: selectedWorkerId, selectedServiceCount: selectedServiceIds.length });
-
-      if (limitCheck.allowed !== true) {
-        setError(limitCheck.message ?? "Limite do plano atingido para novos agendamentos.");
-        return;
-      }
-
       const worker = workers.find((entry) => entry.id === selectedWorkerId);
       const workerName = worker?.nome ?? "Profissional";
       const reminderCount = reminderCountForBusinessRow(businessRow);
@@ -862,59 +850,105 @@ export default function BookingDialog({
         cursor = end;
       }
 
-      const insertedSchedules = await measureAsync("booking_create_schedules", () => createSchedulesAtomically({
-        businessId,
-        workerId: selectedWorkerId,
-        customerName: cleanName,
-        customerPhone: cleanPhoneDigits,
-        dateKey: selectedDateKey,
-        reminderCount,
-        status: "confirmado",
-        schedules: scheduleRequests,
-      }), {
-        businessId,
-        workerId: selectedWorkerId,
-        selectedServiceCount: selectedServiceIds.length,
-        dateKey: selectedDateKey,
-      });
+      let createdIds = [];
+      let confirmationPayload = null;
+      let asyncSideEffects = [];
 
-      const createdIds = [];
-      const asyncSideEffects = [];
-      for (const inserted of insertedSchedules) {
-        const insertedId = toInt(inserted?.id);
-        if (insertedId) {
-          createdIds.push(insertedId);
+      if (isBookingApiEnabled()) {
+        const apiResult = await measureAsync("booking_create_via_api", () => createBookingViaApi({
+          businessId,
+          workerId: selectedWorkerId,
+          customerName: cleanName,
+          customerPhone: cleanPhoneDigits,
+          dateKey: selectedDateKey,
+          schedules: scheduleRequests,
+        }), {
+          businessId,
+          workerId: selectedWorkerId,
+          selectedServiceCount: selectedServiceIds.length,
+          dateKey: selectedDateKey,
+        });
+
+        createdIds = Array.isArray(apiResult?.createdIds)
+          ? apiResult.createdIds.map((item) => toInt(item)).filter(Boolean)
+          : [];
+        confirmationPayload = apiResult?.confirmationPayload ?? null;
+      } else {
+        const limitCheck = await measureAsync("booking_check_limit", () => checkScheduleCreationLimit({
+          businessId,
+          additionalSchedules: selectedServiceIds.length,
+          workerId: selectedWorkerId,
+          referenceDate: selectedDate,
+          businessRow,
+        }), { businessId, workerId: selectedWorkerId, selectedServiceCount: selectedServiceIds.length });
+
+        if (limitCheck.allowed !== true) {
+          setError(limitCheck.message ?? "Limite do plano atingido para novos agendamentos.");
+          return;
         }
 
-        const serviceId = toInt(inserted?.servico_id);
-        const service = serviceById[serviceId];
-        const scheduleStart = String(inserted?.hora_inicio ?? "").trim();
+        const insertedSchedules = await measureAsync("booking_create_schedules", () => createSchedulesAtomically({
+          businessId,
+          workerId: selectedWorkerId,
+          customerName: cleanName,
+          customerPhone: cleanPhoneDigits,
+          dateKey: selectedDateKey,
+          reminderCount,
+          status: "confirmado",
+          schedules: scheduleRequests,
+        }), {
+          businessId,
+          workerId: selectedWorkerId,
+          selectedServiceCount: selectedServiceIds.length,
+          dateKey: selectedDateKey,
+        });
 
-        asyncSideEffects.push(
-          insertRow({
-            table: "notifications",
-            data: {
-              business_id: businessId,
-              title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${scheduleStart || "--:--"}!`,
-              message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
-              trabalhador_nome: workerName,
-              type: "agendamento",
-            },
-          }).catch(() => null),
-        );
+        createdIds = [];
+        asyncSideEffects = [];
+        for (const inserted of insertedSchedules) {
+          const insertedId = toInt(inserted?.id);
+          if (insertedId) {
+            createdIds.push(insertedId);
+          }
 
-        if (!blockN8n) {
+          const serviceId = toInt(inserted?.servico_id);
+          const service = serviceById[serviceId];
+          const scheduleStart = String(inserted?.hora_inicio ?? "").trim();
+
           asyncSideEffects.push(
-            fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                agendamento: toJsonSafe(inserted),
-                business: toJsonSafe(businessRow),
-              }),
+            insertRow({
+              table: "notifications",
+              data: {
+                business_id: businessId,
+                title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${scheduleStart || "--:--"}!`,
+                message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
+                trabalhador_nome: workerName,
+                type: "agendamento",
+              },
             }).catch(() => null),
           );
+
+          if (!blockN8n) {
+            asyncSideEffects.push(
+              fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  agendamento: toJsonSafe(inserted),
+                  business: toJsonSafe(businessRow),
+                }),
+              }).catch(() => null),
+            );
+          }
         }
+
+        confirmationPayload = {
+          schedule: insertedSchedules[0],
+          business: businessRow,
+          worker: worker ?? {},
+          service: selectedServices[0] ?? serviceById[toInt(insertedSchedules[0]?.servico_id)] ?? {},
+          totalPrice,
+        };
       }
 
       if (createdIds.length === 0) {
@@ -925,13 +959,7 @@ export default function BookingDialog({
       setLastName(cleanName);
       setLastWhatsapp(customerWhatsapp.trim());
       setSlotConflict(false);
-      onSuccess?.(createdIds[0], {
-        schedule: insertedSchedules[0],
-        business: businessRow,
-        worker: worker ?? {},
-        service: selectedServices[0] ?? serviceById[toInt(insertedSchedules[0]?.servico_id)] ?? {},
-        totalPrice,
-      });
+      onSuccess?.(createdIds[0], confirmationPayload);
       onClose?.("success");
       Promise.allSettled(asyncSideEffects).catch(() => {});
       queuePerfEvent({
