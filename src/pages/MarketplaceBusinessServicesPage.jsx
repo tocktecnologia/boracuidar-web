@@ -4,8 +4,11 @@ import { CalendarClock, MapPin, Search } from "lucide-react";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import { queryRows } from "../lib/firestore";
 import { digitsOnly, firstText, formatMoney, toInt } from "../lib/marketplace";
+import { measureAsync } from "../lib/observability";
+import { readSessionCache, writeSessionCache } from "../lib/sessionCache";
 
 const BookingDialog = lazy(() => import("../components/booking/BookingDialog"));
+const SERVICES_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function useBusinessId() {
   const { search } = useLocation();
@@ -63,11 +66,20 @@ export default function MarketplaceBusinessServicesPage() {
         return;
       }
 
-      setLoading(true);
+      const cacheKey = `business-services:${businessId}`;
+      const cached = readSessionCache(cacheKey, SERVICES_CACHE_TTL_MS);
+      if (cached?.business) {
+        setBusiness(cached.business ?? null);
+        setServices(Array.isArray(cached.services) ? cached.services : []);
+        setPage(cached.page ?? null);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
       setError("");
 
       try {
-        const [businessRows, serviceRows, pageRows] = await Promise.all([
+        const [businessRows, serviceRows, pageRows] = await measureAsync("business_services_page_load", () => Promise.all([
           queryRows({
             table: "business",
             conditions: [{ field: "id", operator: "eq", value: businessId }],
@@ -86,7 +98,7 @@ export default function MarketplaceBusinessServicesPage() {
             conditions: [{ field: "business_id", operator: "eq", value: businessId }],
             limit: 1,
           }),
-        ]);
+        ]), { businessId, cached: Boolean(cached?.business) });
 
         if (!mounted) return;
 
@@ -97,6 +109,11 @@ export default function MarketplaceBusinessServicesPage() {
         setBusiness(businessRows[0]);
         setServices(serviceRows);
         setPage(pageRows[0] ?? null);
+        writeSessionCache(cacheKey, {
+          business: businessRows[0],
+          services: serviceRows,
+          page: pageRows[0] ?? null,
+        });
       } catch (loadError) {
         if (!mounted) return;
         setError(loadError.message);
@@ -135,9 +152,10 @@ export default function MarketplaceBusinessServicesPage() {
     setBookingOpen(true);
   }
 
-  function handleBookingSuccess(agendamentoId) {
+  function handleBookingSuccess(agendamentoId, confirmationPayload = null) {
     navigate(
       `/marketplace/confirmation?agendamentoId=${encodeURIComponent(agendamentoId)}&businessId=${encodeURIComponent(businessId)}`,
+      confirmationPayload ? { state: { confirmationPayload } } : undefined,
     );
   }
 

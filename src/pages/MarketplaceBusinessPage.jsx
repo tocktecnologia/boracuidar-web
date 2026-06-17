@@ -17,6 +17,7 @@ import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import BookingDialog from "../components/booking/BookingDialog";
 import StarRating from "../components/common/StarRating";
 import { queryRows } from "../lib/firestore";
+import { measureAsync } from "../lib/observability";
 import {
   coverFromPageOrBusiness,
   digitsOnly,
@@ -100,11 +101,11 @@ export default function MarketplaceBusinessPage() {
       setError("");
 
       try {
-        const businessRows = await queryRows({
+        const businessRows = await measureAsync("business_page_load_business", () => queryRows({
           table: "business",
           conditions: [{ field: "id", operator: "eq", value: businessId }],
           limit: 1,
-        });
+        }), { businessId });
 
         if (businessRows.length === 0) {
           throw new Error("Estabelecimento nao encontrado.");
@@ -129,7 +130,7 @@ export default function MarketplaceBusinessPage() {
           throw new Error("Esta pagina ainda esta em processo de aprovacao no marketplace.");
         }
 
-        const [serviceRows, workerRows, evaluationRows] = await Promise.all([
+        const [serviceRows, workerRows, evaluationRows] = await measureAsync("business_page_load_related", () => Promise.all([
           queryRows({
             table: "servicos",
             conditions: [
@@ -151,7 +152,7 @@ export default function MarketplaceBusinessPage() {
             conditions: [{ field: "business_id", operator: "eq", value: businessId }],
             orders: [{ field: "created_at", ascending: false }],
           }),
-        ]);
+        ]), { businessId });
 
         if (!mounted) return;
 
@@ -217,9 +218,10 @@ export default function MarketplaceBusinessPage() {
     setBookingOpen(true);
   }
 
-  function handleBookingSuccess(agendamentoId) {
+  function handleBookingSuccess(agendamentoId, confirmationPayload = null) {
     navigate(
       `/marketplace/confirmation?agendamentoId=${encodeURIComponent(agendamentoId)}&businessId=${encodeURIComponent(businessId)}`,
+      confirmationPayload ? { state: { confirmationPayload } } : undefined,
     );
   }
 

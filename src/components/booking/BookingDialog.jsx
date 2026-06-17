@@ -13,6 +13,7 @@ import {
   toJsonSafe,
 } from "../../lib/firestore";
 import { asDateOnly, firstText, formatMoney, overlaps, parseDate, parseTimeOnDate, sameMinute, toInt, toNumber } from "../../lib/marketplace";
+import { measureAsync, queuePerfEvent } from "../../lib/observability";
 
 const SEARCH_HORIZON_DAYS = 60;
 const WINDOW_DAYS = 7;
@@ -460,7 +461,7 @@ export default function BookingDialog({
       setToday(nowToday);
 
       try {
-        const [rawServices, rawWorkers, rawLinks, rawBusiness] = await Promise.all([
+        const [rawServices, rawWorkers, rawLinks, rawBusiness] = await measureAsync("booking_dialog_bootstrap", () => Promise.all([
           queryRows({
             table: "servicos",
             conditions: [
@@ -486,7 +487,7 @@ export default function BookingDialog({
             conditions: [{ field: "id", operator: "eq", value: businessId }],
             limit: 1,
           }),
-        ]);
+        ]), { businessId });
 
         if (!active) return;
 
@@ -799,6 +800,8 @@ export default function BookingDialog({
     setSaving(true);
     setError("");
 
+    const totalStartedAt = performance.now();
+
     try {
       const currentStart = selectedStart ? new Date(selectedStart) : null;
       if (!currentStart || !selectedWorkerId || !selectedDate) {
@@ -807,7 +810,11 @@ export default function BookingDialog({
       }
 
       clearAvailabilityCache();
-      const latestStarts = await availableStartsFor(selectedWorkerId, selectedDate, totalDuration > 0 ? totalDuration : 30);
+      const latestStarts = await measureAsync(
+        "booking_validate_latest_starts",
+        () => availableStartsFor(selectedWorkerId, selectedDate, totalDuration > 0 ? totalDuration : 30),
+        { businessId, workerId: selectedWorkerId, selectedServiceCount: selectedServiceIds.length },
+      );
       if (!latestStarts.some((start) => sameMinute(start, currentStart))) {
         await refreshStarts({
           workerId: selectedWorkerId,
@@ -820,13 +827,13 @@ export default function BookingDialog({
         return;
       }
 
-      const limitCheck = await checkScheduleCreationLimit({
+      const limitCheck = await measureAsync("booking_check_limit", () => checkScheduleCreationLimit({
         businessId,
         additionalSchedules: selectedServiceIds.length,
         workerId: selectedWorkerId,
         referenceDate: selectedDate,
         businessRow,
-      });
+      }), { businessId, workerId: selectedWorkerId, selectedServiceCount: selectedServiceIds.length });
 
       if (limitCheck.allowed !== true) {
         setError(limitCheck.message ?? "Limite do plano atingido para novos agendamentos.");
@@ -855,7 +862,7 @@ export default function BookingDialog({
         cursor = end;
       }
 
-      const insertedSchedules = await createSchedulesAtomically({
+      const insertedSchedules = await measureAsync("booking_create_schedules", () => createSchedulesAtomically({
         businessId,
         workerId: selectedWorkerId,
         customerName: cleanName,
@@ -864,9 +871,15 @@ export default function BookingDialog({
         reminderCount,
         status: "confirmado",
         schedules: scheduleRequests,
+      }), {
+        businessId,
+        workerId: selectedWorkerId,
+        selectedServiceCount: selectedServiceIds.length,
+        dateKey: selectedDateKey,
       });
 
       const createdIds = [];
+      const asyncSideEffects = [];
       for (const inserted of insertedSchedules) {
         const insertedId = toInt(inserted?.id);
         if (insertedId) {
@@ -877,26 +890,30 @@ export default function BookingDialog({
         const service = serviceById[serviceId];
         const scheduleStart = String(inserted?.hora_inicio ?? "").trim();
 
-        await insertRow({
-          table: "notifications",
-          data: {
-            business_id: businessId,
-            title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${scheduleStart || "--:--"}!`,
-            message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
-            trabalhador_nome: workerName,
-            type: "agendamento",
-          },
-        });
+        asyncSideEffects.push(
+          insertRow({
+            table: "notifications",
+            data: {
+              business_id: businessId,
+              title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${scheduleStart || "--:--"}!`,
+              message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
+              trabalhador_nome: workerName,
+              type: "agendamento",
+            },
+          }).catch(() => null),
+        );
 
         if (!blockN8n) {
-          fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              agendamento: toJsonSafe(inserted),
-              business: toJsonSafe(businessRow),
-            }),
-          }).catch(() => {});
+          asyncSideEffects.push(
+            fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                agendamento: toJsonSafe(inserted),
+                business: toJsonSafe(businessRow),
+              }),
+            }).catch(() => null),
+          );
         }
       }
 
@@ -908,9 +925,38 @@ export default function BookingDialog({
       setLastName(cleanName);
       setLastWhatsapp(customerWhatsapp.trim());
       setSlotConflict(false);
-      onSuccess?.(createdIds[0]);
+      onSuccess?.(createdIds[0], {
+        schedule: insertedSchedules[0],
+        business: businessRow,
+        worker: worker ?? {},
+        service: selectedServices[0] ?? serviceById[toInt(insertedSchedules[0]?.servico_id)] ?? {},
+        totalPrice,
+      });
       onClose?.("success");
+      Promise.allSettled(asyncSideEffects).catch(() => {});
+      queuePerfEvent({
+        name: "booking_submit_total",
+        durationMs: performance.now() - totalStartedAt,
+        context: {
+          businessId,
+          workerId: selectedWorkerId,
+          selectedServiceCount: selectedServiceIds.length,
+          dateKey: selectedDateKey,
+        },
+      });
     } catch (submitError) {
+      queuePerfEvent({
+        name: "booking_submit_total",
+        durationMs: performance.now() - totalStartedAt,
+        context: {
+          businessId,
+          workerId: selectedWorkerId,
+          selectedServiceCount: selectedServiceIds.length,
+          dateKey: selectedDate ? dateKey(selectedDate) : "",
+        },
+        error: submitError,
+        force: true,
+      });
       if (isBookingSlotTakenError(submitError) || isBookingSlotUnavailableError(submitError)) {
         clearAvailabilityCache();
         await refreshStarts({

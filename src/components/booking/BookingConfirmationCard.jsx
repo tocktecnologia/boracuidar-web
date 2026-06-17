@@ -2,11 +2,20 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink } from "lucide-react";
 import { queryRows } from "../../lib/firestore";
 import { digitsOnly, firstText, formatDate, formatMoney } from "../../lib/marketplace";
+import { measureAsync } from "../../lib/observability";
 
-export default function BookingConfirmationCard({ agendamentoId, onBack }) {
-  const [loading, setLoading] = useState(Boolean(agendamentoId));
+function buildInitialPayload(agendamentoId, initialPayload) {
+  if (!initialPayload) return null;
+  const payloadId = Number(initialPayload?.schedule?.id ?? 0);
+  if (!payloadId || payloadId !== Number(agendamentoId)) return null;
+  return initialPayload;
+}
+
+export default function BookingConfirmationCard({ agendamentoId, onBack, initialPayload = null }) {
+  const initialResolvedPayload = buildInitialPayload(agendamentoId, initialPayload);
+  const [loading, setLoading] = useState(Boolean(agendamentoId) && !initialResolvedPayload);
   const [error, setError] = useState("");
-  const [payload, setPayload] = useState(null);
+  const [payload, setPayload] = useState(initialResolvedPayload);
 
   useEffect(() => {
     let mounted = true;
@@ -15,44 +24,47 @@ export default function BookingConfirmationCard({ agendamentoId, onBack }) {
       setLoading(true);
       setError("");
       try {
-        const schedules = await queryRows({
-          table: "agendamentos",
-          conditions: [{ field: "id", operator: "eq", value: Number(agendamentoId) }],
-          limit: 1,
-        });
-
-        if (schedules.length === 0) {
-          throw new Error("Agendamento nao encontrado.");
-        }
-
-        const schedule = schedules[0];
-
-        const [businessRows, workerRows, serviceRows] = await Promise.all([
-          queryRows({
-            table: "business",
-            conditions: [{ field: "id", operator: "eq", value: schedule.business_id }],
+        const nextPayload = await measureAsync("booking_confirmation_load", async () => {
+          const schedules = await queryRows({
+            table: "agendamentos",
+            conditions: [{ field: "id", operator: "eq", value: Number(agendamentoId) }],
             limit: 1,
-          }),
-          queryRows({
-            table: "trabalhadores",
-            conditions: [{ field: "id", operator: "eq", value: schedule.trabalhador_id }],
-            limit: 1,
-          }),
-          queryRows({
-            table: "servicos",
-            conditions: [{ field: "id", operator: "eq", value: schedule.servico_id }],
-            limit: 1,
-          }),
-        ]);
+          });
+
+          if (schedules.length === 0) {
+            throw new Error("Agendamento nao encontrado.");
+          }
+
+          const schedule = schedules[0];
+
+          const [businessRows, workerRows, serviceRows] = await Promise.all([
+            queryRows({
+              table: "business",
+              conditions: [{ field: "id", operator: "eq", value: schedule.business_id }],
+              limit: 1,
+            }),
+            queryRows({
+              table: "trabalhadores",
+              conditions: [{ field: "id", operator: "eq", value: schedule.trabalhador_id }],
+              limit: 1,
+            }),
+            queryRows({
+              table: "servicos",
+              conditions: [{ field: "id", operator: "eq", value: schedule.servico_id }],
+              limit: 1,
+            }),
+          ]);
+
+          return {
+            schedule,
+            business: businessRows[0] ?? {},
+            worker: workerRows[0] ?? {},
+            service: serviceRows[0] ?? {},
+          };
+        }, { agendamentoId });
 
         if (!mounted) return;
-
-        setPayload({
-          schedule,
-          business: businessRows[0] ?? {},
-          worker: workerRows[0] ?? {},
-          service: serviceRows[0] ?? {},
-        });
+        setPayload(nextPayload);
       } catch (loadError) {
         if (!mounted) return;
         setError(loadError.message);
@@ -61,12 +73,18 @@ export default function BookingConfirmationCard({ agendamentoId, onBack }) {
       }
     }
 
+    if (initialResolvedPayload) {
+      return () => {
+        mounted = false;
+      };
+    }
+
     if (agendamentoId) loadData();
 
     return () => {
       mounted = false;
     };
-  }, [agendamentoId]);
+  }, [agendamentoId, initialResolvedPayload]);
 
   if (loading) {
     return <div className="confirmation-card">Carregando confirmacao...</div>;
@@ -90,7 +108,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack }) {
     );
   }
 
-  const { schedule, business, worker, service } = payload;
+  const { schedule, business, worker, service, totalPrice } = payload;
   const whatsappBotPhone = firstText([business.whatsapp_bot, business.whatsapp, business.telefone]);
   const whatsappBotDigits = digitsOnly(whatsappBotPhone);
   const whatsappLink = whatsappBotDigits
@@ -130,7 +148,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack }) {
         </div>
         <div>
           <dt>Total</dt>
-          <dd>{formatMoney(service.preco || 0)}</dd>
+          <dd>{formatMoney(totalPrice ?? (service.preco || 0))}</dd>
         </div>
       </dl>
 
