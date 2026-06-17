@@ -1,16 +1,121 @@
-# React + Vite
+# Bora Cuidar Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend publico do marketplace Bora Cuidar, responsavel por descoberta de negocios, selecao de servicos e fluxo de agendamento.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React + Vite
+- React Router
+- Firebase Web SDK
+- Cloud Run para criacao/validacao server-side de agendamentos
 
-## React Compiler
+## Estrutura principal
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `src/`: frontend web
+- `backend/booking-api`: backend Node/Express para agendamento em Cloud Run
+- `deploy/workflow-hostgator`: script de build + deploy FTPS do frontend
+- `docs/`: documentacao operacional e de negocio
 
-## Expanding the ESLint configuration
+## Frontend
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Instalacao:
+
+```bash
+npm install
+```
+
+Ambiente de producao:
+
+1. copie `.env.production.example` para `.env.production`
+2. preencha as variaveis necessarias
+
+Exemplo:
+
+```env
+VITE_BOOKING_API_URL=https://boracuidar-booking-api-xxxxxx-uc.a.run.app
+```
+
+Observacao importante:
+
+- se `VITE_BOOKING_API_URL` estiver definida, o frontend usa o backend server-side para criar e validar agendamentos;
+- se nao estiver definida, o frontend usa o fluxo legado client-side como fallback.
+
+Build:
+
+```bash
+npm run build
+```
+
+## Backend de agendamento
+
+O backend foi criado em `backend/booking-api` para mover do cliente para o servidor:
+
+- validacao de limite de agendamentos
+- validacao de disponibilidade
+- criacao atomica com locks de horario
+- notificacoes internas
+- webhook de automacao
+
+Documentacao detalhada:
+
+- [docs/BOOKING_BACKEND.md](docs/BOOKING_BACKEND.md)
+
+Instalacao local:
+
+```bash
+cd backend/booking-api
+npm install
+```
+
+Execucao local:
+
+```bash
+npm run dev
+```
+
+Healthcheck:
+
+```bash
+GET /health
+```
+
+Endpoint principal:
+
+```bash
+POST /api/bookings/create
+```
+
+## Deploy do frontend
+
+O deploy atual usa FTPS via HostGator.
+
+Credenciais:
+
+- `deploy/workflow-hostgator/secrets.env`
+
+Publicacao:
+
+```bash
+python .\deploy\workflow-hostgator\deploy_web_hostgator.py
+```
+
+O script:
+
+- instala dependencias
+- gera o build
+- cria `.htaccess` para SPA
+- sobe `dist/` via FTPS
+
+## Mudancas importantes recentes
+
+- fluxo de confirmacao mais rapido com menos bloqueio no frontend
+- instrumentacao de performance para casos lentos
+- cache curto na pagina de servicos
+- criacao e validacao de agendamento movidas para backend quando `VITE_BOOKING_API_URL` estiver ativa
+
+## Arquivos locais que nao devem ser commitados
+
+- `.env.production`
+- `.ftp-deploy-sync-state-web.json`
+
+Use `.env.production.example` como base segura para configuracao.
