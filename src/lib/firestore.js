@@ -3,6 +3,7 @@
   collection,
   collectionGroup,
   doc,
+  getDoc,
   getDocs,
   getFirestore,
   limit as queryLimit,
@@ -218,6 +219,28 @@ function decodeDocRow(table, docSnap) {
   return data;
 }
 
+function primaryKeyFieldForTable(table) {
+  if (NUMERIC_ID_TABLES.has(table)) return "id";
+  return STRING_PK_BY_TABLE[table] ?? null;
+}
+
+function directDocIdFromConditions(table, conditions = []) {
+  const pkField = primaryKeyFieldForTable(table);
+  if (!pkField) return null;
+
+  const pkCondition = conditions.find((condition) => condition.operator === "eq" && condition.field === pkField);
+  if (!pkCondition) return null;
+
+  if (pkField === "id" && NUMERIC_ID_TABLES.has(table)) {
+    const numericId = Number(pkCondition.value);
+    if (!Number.isFinite(numericId)) return null;
+    return String(numericId);
+  }
+
+  const text = String(pkCondition.value ?? "").trim();
+  return text || null;
+}
+
 function queryPartForCondition(c) {
   if (c.operator === "inFilter") {
     const list = Array.isArray(c.value) ? c.value.slice(0, 10) : [];
@@ -279,9 +302,21 @@ export function reminderCountForBusinessRow(businessRow) {
 }
 
 export async function queryRows({ table, conditions = [], orders = [], limit = null }) {
+  const directDocId = directDocIdFromConditions(table, conditions);
+  if (directDocId && (limit == null || limit === 1)) {
+    try {
+      const snapshot = await getDoc(doc(db, table, directDocId));
+      if (!snapshot.exists()) return [];
+      const row = decodeDocRow(table, snapshot);
+      return sortAndFilterRows([row], conditions, orders, limit);
+    } catch {
+      // Fall back to the regular query path.
+    }
+  }
+
   const fallback = async () => {
     const fallbackConditions = conditions
-      .filter((condition) => ["eq", "inFilter", "contains", "overlaps"].includes(condition.operator))
+      .filter((condition) => ["eq", "lt", "lte", "gt", "gte", "inFilter", "contains", "overlaps"].includes(condition.operator))
       .slice()
       .sort((a, b) => fallbackConditionPriority(a) - fallbackConditionPriority(b));
 
@@ -893,9 +928,19 @@ function isCancelledStatus(status) {
 }
 
 export async function checkScheduleCreationLimit({ businessId, additionalSchedules = 1, workerId = null, referenceDate = new Date(), businessRow = null }) {
+  const monthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+  const monthEnd = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1);
+  const monthStartKey = formatDateKey(monthStart);
+  const monthEndKey = formatDateKey(monthEnd);
+
   const rows = await queryRows({
     table: "agendamentos",
-    conditions: [{ field: "business_id", operator: "eq", value: businessId }],
+    conditions: [
+      { field: "business_id", operator: "eq", value: businessId },
+      { field: "data_agendamento", operator: "gte", value: monthStartKey },
+      { field: "data_agendamento", operator: "lt", value: monthEndKey },
+      ...(workerId != null ? [{ field: "trabalhador_id", operator: "eq", value: workerId }] : []),
+    ],
   });
 
   const resolvedBusiness = businessRow ?? (await queryRows({
@@ -905,8 +950,6 @@ export async function checkScheduleCreationLimit({ businessId, additionalSchedul
   }))[0] ?? {};
 
   const policy = subscriptionPolicyByName(resolvedBusiness.subscription);
-  const monthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
-  const monthEnd = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1);
 
   const inMonth = rows.filter((row) => {
     const date = parseDate(row.data_agendamento);
