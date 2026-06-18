@@ -271,7 +271,11 @@ async function queryCollection(table, predicates = []) {
 }
 
 function stableJson(value) {
-  return JSON.stringify(value, Object.keys(value).sort());
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+  const sortedEntries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify(Object.fromEntries(sortedEntries));
 }
 
 function cacheKey(prefix, parts) {
@@ -826,6 +830,76 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/bookings/bootstrap", async (req, res) => {
+  try {
+    const businessId = String(req.query.businessId ?? "").trim();
+    if (!businessId) {
+      return res.status(400).json({ ok: false, message: "businessId ausente." });
+    }
+
+    const payload = await bookingBootstrapPayload(businessId);
+    if (!payload?.business) {
+      return res.status(404).json({ ok: false, message: "Estabelecimento nao encontrado." });
+    }
+
+    return res.json({
+      ok: true,
+      ...payload,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      code: "booking/bootstrap-internal",
+      message: error?.message || "Erro interno ao carregar bootstrap do agendamento.",
+    });
+  }
+});
+
+app.get("/api/bookings/availability", async (req, res) => {
+  try {
+    const businessId = String(req.query.businessId ?? "").trim();
+    const workerId = Number(req.query.workerId);
+    const durationMinutes = positiveInt(req.query.durationMinutes, 30);
+    const fromDateKey = normalizeDateKey(req.query.fromDateKey);
+    const selectedDateKey = normalizeDateKey(req.query.selectedDateKey);
+    const days = Math.min(positiveInt(req.query.days, 1), 14);
+
+    if (!businessId) {
+      return res.status(400).json({ ok: false, message: "businessId ausente." });
+    }
+    if (!Number.isFinite(workerId) || workerId <= 0) {
+      return res.status(400).json({ ok: false, message: "Profissional invalido." });
+    }
+    if (!fromDateKey) {
+      return res.status(400).json({ ok: false, message: "fromDateKey invalida." });
+    }
+
+    const payload = await bookingAvailabilityPayload({
+      businessId,
+      workerId,
+      durationMinutes,
+      fromDateKey,
+      selectedDateKey: selectedDateKey ?? fromDateKey,
+      days,
+    });
+
+    return res.json({
+      ok: true,
+      workerId,
+      durationMinutes,
+      fromDateKey,
+      days,
+      ...payload,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      code: "booking/availability-internal",
+      message: error?.message || "Erro interno ao carregar disponibilidade.",
+    });
+  }
+});
+
 app.post("/api/bookings/create", async (req, res) => {
   try {
     const {
@@ -886,6 +960,12 @@ app.post("/api/bookings/create", async (req, res) => {
       status: "confirmado",
       schedules,
     });
+
+    invalidateCache((key) =>
+      key.startsWith("availability:") &&
+      key.includes(`"businessId":"${normalizedBusinessId}"`) &&
+      key.includes(`"workerId":${normalizedWorkerId}`),
+    );
 
     const worker = await readWorkerById(normalizedWorkerId);
     const firstSchedule = insertedSchedules[0];

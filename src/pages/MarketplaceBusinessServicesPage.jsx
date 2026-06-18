@@ -10,6 +10,14 @@ import { readSessionCache, writeSessionCache } from "../lib/sessionCache";
 const BookingDialog = lazy(() => import("../components/booking/BookingDialog"));
 const SERVICES_CACHE_TTL_MS = 5 * 60 * 1000;
 
+function BookingDialogFallback() {
+  return (
+    <div className="section-message">
+      <p>Carregando disponibilidade...</p>
+    </div>
+  );
+}
+
 function useBusinessId() {
   const { search } = useLocation();
   const params = new URLSearchParams(search);
@@ -129,6 +137,10 @@ export default function MarketplaceBusinessServicesPage() {
     };
   }, [businessId]);
 
+  useEffect(() => {
+    void import("../components/booking/BookingDialog");
+  }, []);
+
   const filteredServices = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return services;
@@ -239,7 +251,7 @@ export default function MarketplaceBusinessServicesPage() {
       </section>
 
       {bookingOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<BookingDialogFallback />}>
           <BookingDialog
             isOpen={bookingOpen}
             businessId={businessId}
