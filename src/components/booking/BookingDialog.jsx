@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePostHog } from "@posthog/react";
 import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Plus, UserRound, X } from "lucide-react";
 import Modal from "../common/Modal";
 import {
@@ -14,6 +15,7 @@ import {
 } from "../../lib/firestore";
 import { createBookingViaApi, isBookingApiEnabled } from "../../lib/bookingApi";
 import { asDateOnly, firstText, formatMoney, overlaps, parseDate, parseTimeOnDate, sameMinute, toInt, toNumber } from "../../lib/marketplace";
+import { captureEvent } from "../../lib/posthog";
 import { measureAsync, queuePerfEvent } from "../../lib/observability";
 
 const SEARCH_HORIZON_DAYS = 60;
@@ -121,6 +123,7 @@ export default function BookingDialog({
   onClose,
   onSuccess,
 }) {
+  const posthog = usePostHog();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [askingCustomer, setAskingCustomer] = useState(false);
@@ -210,6 +213,22 @@ export default function BookingDialog({
     }
     return rows;
   }, [selectedStart, selectedServiceIds, serviceById]);
+
+  function analyticsProps(extra = {}) {
+    return {
+      business_id: businessId,
+      initial_service_id: initialServiceId ?? undefined,
+      worker_id: selectedWorkerId ?? undefined,
+      selected_service_ids: selectedServiceIds,
+      selected_service_count: selectedServiceIds.length,
+      selected_date: selectedDate ? dateKey(selectedDate) : undefined,
+      selected_start: selectedStart ? timeLabel(selectedStart) : undefined,
+      total_duration_minutes: totalDuration,
+      total_price: totalPrice,
+      booking_mode: isBookingApiEnabled() ? "backend" : "client",
+      ...extra,
+    };
+  }
 
   function clearAvailabilityCache() {
     dayCacheRef.current.clear();
@@ -577,6 +596,13 @@ export default function BookingDialog({
   }, [businessId, initialCustomerName, initialCustomerWhatsapp, initialServiceId, isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!isOpen) return;
+    if (!posthog) return;
+
+    captureEvent("booking_dialog_opened", analyticsProps());
+  }, [isOpen, posthog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!isOpen || !selectedWorkerId || loading) return;
 
     let active = true;
@@ -777,6 +803,7 @@ export default function BookingDialog({
     setCustomerName(lastName);
     setCustomerWhatsapp(lastWhatsapp);
     setCustomerOpen(true);
+    captureEvent("booking_customer_prompt_opened", analyticsProps());
   }
 
   async function handleCreateBooking() {
@@ -800,6 +827,7 @@ export default function BookingDialog({
     setAskingCustomer(true);
     setSaving(true);
     setError("");
+    captureEvent("booking_submit_attempted", analyticsProps());
 
     const totalStartedAt = performance.now();
 
@@ -825,6 +853,7 @@ export default function BookingDialog({
         });
         setError("Outra pessoa acabou de reservar esse horario. Escolha um novo horario para continuar.");
         setSlotConflict(true);
+        captureEvent("booking_slot_conflict", analyticsProps({ reason: "latest_start_unavailable" }));
         return;
       }
 
@@ -884,6 +913,7 @@ export default function BookingDialog({
 
         if (limitCheck.allowed !== true) {
           setError(limitCheck.message ?? "Limite do plano atingido para novos agendamentos.");
+          captureEvent("booking_submit_failed", analyticsProps({ reason: "plan_limit", error_code: "booking/plan-limit" }));
           return;
         }
 
@@ -953,12 +983,14 @@ export default function BookingDialog({
 
       if (createdIds.length === 0) {
         setError("Nao foi possivel criar o agendamento.");
+        captureEvent("booking_submit_failed", analyticsProps({ reason: "empty_created_ids" }));
         return;
       }
 
       setLastName(cleanName);
       setLastWhatsapp(customerWhatsapp.trim());
       setSlotConflict(false);
+      captureEvent("booking_submit_succeeded", analyticsProps({ agendamento_id: createdIds[0] }));
       onSuccess?.(createdIds[0], confirmationPayload);
       onClose?.("success");
       Promise.allSettled(asyncSideEffects).catch(() => {});
@@ -998,10 +1030,18 @@ export default function BookingDialog({
           : submitError.message || "Esse horario nao cabe mais na disponibilidade atual do profissional.";
         setError(message);
         setSlotConflict(true);
+        captureEvent("booking_slot_conflict", analyticsProps({
+          reason: isBookingSlotTakenError(submitError) ? "slot_taken" : "slot_unavailable",
+          error_code: String(submitError?.code ?? ""),
+        }));
         return;
       }
       setError(`Erro ao agendar: ${submitError.message}`);
       setSlotConflict(false);
+      captureEvent("booking_submit_failed", analyticsProps({
+        error_code: String(submitError?.code ?? ""),
+        error_message: String(submitError?.message ?? "").slice(0, 160),
+      }));
     } finally {
       setAskingCustomer(false);
       setSaving(false);
@@ -1171,6 +1211,10 @@ export default function BookingDialog({
                               if (!slot.available) return;
                               setSlotConflict(false);
                               setSelectedStart(slot.start);
+                              captureEvent("booking_slot_selected", analyticsProps({
+                                selected_date: selectedDate ? dateKey(selectedDate) : undefined,
+                                selected_start: timeLabel(slot.start),
+                              }));
                             }}
                             disabled={!slot.available}
                             type="button"
@@ -1193,7 +1237,15 @@ export default function BookingDialog({
                   )}
                 </section>
 
-                <button className="booking-add-service" type="button" onClick={handleOpenAddService} disabled={saving}>
+                <button
+                  className="booking-add-service"
+                  type="button"
+                  onClick={() => {
+                    captureEvent("booking_add_service_opened", analyticsProps());
+                    handleOpenAddService();
+                  }}
+                  disabled={saving}
+                >
                   <Plus size={18} /> Adicionar outro servico
                 </button>
 
@@ -1364,6 +1416,7 @@ export default function BookingDialog({
           <label htmlFor="booking-customer-name">Nome</label>
           <input
             id="booking-customer-name"
+            className="ph-no-capture"
             value={customerName}
             onChange={(event) => setCustomerName(event.target.value)}
             placeholder="Seu nome completo"
@@ -1372,6 +1425,7 @@ export default function BookingDialog({
           <label htmlFor="booking-customer-phone">Whatsapp</label>
           <input
             id="booking-customer-phone"
+            className="ph-no-capture"
             value={customerWhatsapp}
             onChange={(event) => setCustomerWhatsapp(event.target.value)}
             placeholder="+55 (00) 0 0000-0000"

@@ -15,8 +15,10 @@ const app = express();
 
 const BOOKING_SLOT_LOCKS_TABLE = "agendamento_slot_locks";
 const BOOKING_LOCK_STEP_MINUTES = 5;
+const AVAILABILITY_STEP_MINUTES = 30;
 const BOOKING_SLOT_TAKEN_CODE = "booking/slot-taken";
 const BOOKING_SLOT_UNAVAILABLE_CODE = "booking/slot-unavailable";
+const RESPONSE_CACHE_TTL_MS = Number(process.env.BOOKING_CACHE_TTL_MS || 15000);
 
 const DEFAULT_SUBSCRIPTIONS = [
   { name: "free", label: "Free", max_schedules_month: 100, max_pre_reminder: 20, allow_n8n: false, block_all_n8n: true },
@@ -27,6 +29,8 @@ const DEFAULT_SUBSCRIPTIONS = [
 
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "512kb" }));
+
+const responseCache = new Map();
 
 function toBool(value) {
   if (typeof value === "boolean") return value;
@@ -106,8 +110,23 @@ function parseMinuteRange(startValue, endValue) {
   return { start, end };
 }
 
+function minuteToClock(minuteOfDay) {
+  const hours = Math.floor(minuteOfDay / 60);
+  const minutes = minuteOfDay % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
 function overlapsMinuteRanges(startA, endA, startB, endB) {
   return startA < endB && endA > startB;
+}
+
+function addDays(date, days) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function positiveInt(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function normalizeExceptionType(value) {
@@ -210,6 +229,26 @@ async function readBusinessById(businessId) {
   return snapshot.data() ?? null;
 }
 
+async function readServicesForBusiness(businessId) {
+  return queryCollection("servicos", [
+    { field: "business_id", op: "==", value: businessId },
+    { field: "ativo", op: "==", value: true },
+  ]);
+}
+
+async function readWorkersForBusiness(businessId) {
+  return queryCollection("trabalhadores", [
+    { field: "business_id", op: "==", value: businessId },
+    { field: "ativo", op: "==", value: true },
+  ]);
+}
+
+async function readWorkerServiceLinks(businessId) {
+  return queryCollection("trabalhador_servico", [
+    { field: "business_id", op: "==", value: businessId },
+  ]);
+}
+
 async function readServiceById(serviceId) {
   const snapshot = await db.collection("servicos").doc(String(serviceId)).get();
   if (!snapshot.exists) return null;
@@ -229,6 +268,308 @@ async function queryCollection(table, predicates = []) {
   }
   const snapshot = await ref.get();
   return snapshot.docs.map((docSnap) => docSnap.data());
+}
+
+function stableJson(value) {
+  return JSON.stringify(value, Object.keys(value).sort());
+}
+
+function cacheKey(prefix, parts) {
+  return `${prefix}:${stableJson(parts)}`;
+}
+
+function getCached(key) {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    responseCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCached(key, value, ttlMs = RESPONSE_CACHE_TTL_MS) {
+  responseCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+
+  if (responseCache.size > 500) {
+    const now = Date.now();
+    for (const [entryKey, entryValue] of responseCache.entries()) {
+      if (entryValue.expiresAt <= now) {
+        responseCache.delete(entryKey);
+      }
+    }
+  }
+}
+
+function invalidateCache(matcher) {
+  for (const key of responseCache.keys()) {
+    if (matcher(key)) {
+      responseCache.delete(key);
+    }
+  }
+}
+
+async function cachedJson(prefix, parts, loader, ttlMs = RESPONSE_CACHE_TTL_MS) {
+  const key = cacheKey(prefix, parts);
+  const cached = getCached(key);
+  if (cached) return cached;
+  const value = await loader();
+  setCached(key, value, ttlMs);
+  return value;
+}
+
+function workerServiceMapFromRows({ workers, services, links }) {
+  const parsedMap = {};
+  if (links.length > 0) {
+    for (const link of links) {
+      const workerId = Number(link?.trabalhador_id);
+      const serviceId = Number(link?.servico_id);
+      if (!Number.isFinite(workerId) || workerId <= 0 || !Number.isFinite(serviceId) || serviceId <= 0) continue;
+      if (!parsedMap[workerId]) parsedMap[workerId] = [];
+      if (!parsedMap[workerId].includes(serviceId)) {
+        parsedMap[workerId].push(serviceId);
+      }
+    }
+  } else {
+    const allServiceIds = services
+      .map((service) => Number(service?.id))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    for (const worker of workers) {
+      const workerId = Number(worker?.id);
+      if (!Number.isFinite(workerId) || workerId <= 0) continue;
+      parsedMap[workerId] = allServiceIds;
+    }
+  }
+  return parsedMap;
+}
+
+function buildDailyAvailability({ targetDate, workRows, exceptionRows, scheduleRows }) {
+  const weekDay = targetDate.getDay();
+  const candidateWorkRows = workRows.filter(
+    (row) =>
+      Number(row?.dia_semana) === weekDay &&
+      toBool(row?.ativo),
+  );
+
+  const baseWorkRow =
+    candidateWorkRows.find((row) => parseMinuteRange(row.hora_inicio ?? row.start_time ?? row.start, row.hora_fim ?? row.end_time ?? row.end)) ??
+    null;
+  if (!baseWorkRow) return null;
+
+  const baseWorkRange = parseMinuteRange(
+    baseWorkRow.hora_inicio ?? baseWorkRow.start_time ?? baseWorkRow.start,
+    baseWorkRow.hora_fim ?? baseWorkRow.end_time ?? baseWorkRow.end,
+  );
+  if (!baseWorkRange) return null;
+
+  let workStart = baseWorkRange.start;
+  let workEnd = baseWorkRange.end;
+  let breakStart = parseClockToMinute(
+    baseWorkRow.intervalo_inicio ?? baseWorkRow.hora_pausa_inicio ?? baseWorkRow.break_start ?? baseWorkRow.lunch_start,
+  );
+  let breakEnd = parseClockToMinute(
+    baseWorkRow.intervalo_fim ?? baseWorkRow.hora_pausa_fim ?? baseWorkRow.break_end ?? baseWorkRow.lunch_end,
+  );
+  if (breakStart == null || breakEnd == null || breakEnd <= breakStart) {
+    breakStart = null;
+    breakEnd = null;
+  }
+
+  if (exceptionRows.some((entry) => normalizeExceptionType(entry?.tipo) === "folga")) {
+    return null;
+  }
+
+  for (const entry of exceptionRows) {
+    if (normalizeExceptionType(entry?.tipo) !== "personalizado") continue;
+
+    const customRange = parseMinuteRange(entry.hora_inicio ?? entry.start_time, entry.hora_fim ?? entry.end_time);
+    if (customRange) {
+      workStart = customRange.start;
+      workEnd = customRange.end;
+    }
+
+    const customBreakRange = parseMinuteRange(
+      entry.intervalo_inicio ?? entry.hora_pausa_inicio ?? entry.break_start,
+      entry.intervalo_fim ?? entry.hora_pausa_fim ?? entry.break_end,
+    );
+    if (customBreakRange) {
+      breakStart = customBreakRange.start;
+      breakEnd = customBreakRange.end;
+    }
+  }
+
+  const blocked = [];
+  for (const entry of exceptionRows) {
+    if (normalizeExceptionType(entry?.tipo) !== "bloqueio") continue;
+    const blockedRange = parseMinuteRange(entry.hora_inicio ?? entry.start_time, entry.hora_fim ?? entry.end_time);
+    if (blockedRange) blocked.push(blockedRange);
+  }
+
+  for (const schedule of scheduleRows) {
+    if (isCancelledStatus(schedule?.status)) continue;
+    const blockedRange = parseMinuteRange(schedule.hora_inicio ?? schedule.start_time, schedule.hora_fim ?? schedule.end_time);
+    if (blockedRange) blocked.push(blockedRange);
+  }
+
+  blocked.sort((a, b) => a.start - b.start);
+
+  return { workStart, workEnd, breakStart, breakEnd, blocked };
+}
+
+function slotStatesForAvailability({ availability, durationMinutes, now }) {
+  if (!availability) return [];
+
+  const normalizedDuration = positiveInt(durationMinutes, 30);
+  const states = [];
+  const lastStart = availability.workEnd - normalizedDuration;
+
+  for (let cursor = availability.workStart; cursor <= lastStart; cursor += AVAILABILITY_STEP_MINUTES) {
+    const end = cursor + normalizedDuration;
+    const isPast = now != null && (cursor < now || end <= now);
+    const hitsBreak =
+      availability.breakStart != null &&
+      availability.breakEnd != null &&
+      overlapsMinuteRanges(cursor, end, availability.breakStart, availability.breakEnd);
+    const isBlocked = availability.blocked.some((interval) => overlapsMinuteRanges(cursor, end, interval.start, interval.end));
+
+    if (!isPast && !hitsBreak) {
+      states.push({
+        startTime: minuteToClock(cursor),
+        endTime: minuteToClock(end),
+        available: !isBlocked,
+        occupied: isBlocked,
+      });
+    }
+  }
+
+  return states;
+}
+
+async function bookingBootstrapPayload(businessId) {
+  return cachedJson("bootstrap", { businessId }, async () => {
+    const [services, workers, links, business] = await Promise.all([
+      readServicesForBusiness(businessId),
+      readWorkersForBusiness(businessId),
+      readWorkerServiceLinks(businessId),
+      readBusinessById(businessId),
+    ]);
+
+    return {
+      business: business ?? null,
+      services,
+      workers,
+      workerServiceMap: workerServiceMapFromRows({ workers, services, links }),
+    };
+  });
+}
+
+async function bookingAvailabilityPayload({ businessId, workerId, durationMinutes, fromDateKey, selectedDateKey, days }) {
+  const normalizedWorkerId = Number(workerId);
+  const normalizedDuration = positiveInt(durationMinutes, 30);
+  const normalizedDays = Math.min(positiveInt(days, 1), 14);
+  const startDate = parseDateOnlyIsoLocal(String(fromDateKey ?? "").trim());
+  const effectiveSelectedDateKey = normalizeDateKey(selectedDateKey) ?? normalizeDateKey(fromDateKey);
+
+  if (!startDate || !effectiveSelectedDateKey) {
+    throw new Error("Data de disponibilidade invalida.");
+  }
+
+  const lastDate = addDays(startDate, normalizedDays - 1);
+  const lastDateKey = formatDateKey(lastDate);
+  const now = new Date();
+
+  return cachedJson(
+    "availability",
+    {
+      businessId,
+      workerId: normalizedWorkerId,
+      durationMinutes: normalizedDuration,
+      fromDateKey: formatDateKey(startDate),
+      selectedDateKey: effectiveSelectedDateKey,
+      days: normalizedDays,
+    },
+    async () => {
+      const [workRows, exceptionRows, scheduleRows] = await Promise.all([
+        queryCollection("horarios_padrao", [
+          { field: "trabalhador_id", op: "==", value: normalizedWorkerId },
+          { field: "business_id", op: "==", value: businessId },
+          { field: "ativo", op: "==", value: true },
+        ]),
+        queryCollection("horarios_excecoes", [
+          { field: "trabalhador_id", op: "==", value: normalizedWorkerId },
+          { field: "business_id", op: "==", value: businessId },
+          { field: "data", op: ">=", value: formatDateKey(startDate) },
+          { field: "data", op: "<=", value: lastDateKey },
+        ]),
+        queryCollection("agendamentos", [
+          { field: "trabalhador_id", op: "==", value: normalizedWorkerId },
+          { field: "business_id", op: "==", value: businessId },
+          { field: "data_agendamento", op: ">=", value: formatDateKey(startDate) },
+          { field: "data_agendamento", op: "<=", value: lastDateKey },
+        ]),
+      ]);
+
+      const exceptionRowsByDate = new Map();
+      const scheduleRowsByDate = new Map();
+
+      for (const row of exceptionRows) {
+        const key = normalizeDateKey(row?.data);
+        if (!key) continue;
+        const entries = exceptionRowsByDate.get(key) ?? [];
+        entries.push(row);
+        exceptionRowsByDate.set(key, entries);
+      }
+
+      for (const row of scheduleRows) {
+        const key = normalizeDateKey(row?.data_agendamento);
+        if (!key) continue;
+        const entries = scheduleRowsByDate.get(key) ?? [];
+        entries.push(row);
+        scheduleRowsByDate.set(key, entries);
+      }
+
+      const dateCounts = {};
+      let slotStates = [];
+
+      for (let index = 0; index < normalizedDays; index += 1) {
+        const targetDate = addDays(startDate, index);
+        const targetDateKey = formatDateKey(targetDate);
+        const minutesNow =
+          formatDateKey(targetDate) === formatDateKey(now)
+            ? now.getHours() * 60 + now.getMinutes()
+            : null;
+
+        const availability = buildDailyAvailability({
+          targetDate,
+          workRows,
+          exceptionRows: exceptionRowsByDate.get(targetDateKey) ?? [],
+          scheduleRows: scheduleRowsByDate.get(targetDateKey) ?? [],
+        });
+
+        const daySlotStates = slotStatesForAvailability({
+          availability,
+          durationMinutes: normalizedDuration,
+          now: minutesNow,
+        });
+
+        const availableCount = daySlotStates.filter((slot) => slot.available).length;
+        dateCounts[targetDateKey] = availableCount;
+
+        if (targetDateKey === effectiveSelectedDateKey) {
+          slotStates = daySlotStates;
+        }
+      }
+
+      return {
+        dateCounts,
+        selectedDateKey: effectiveSelectedDateKey,
+        slotStates,
+      };
+    },
+  );
 }
 
 async function workerAvailabilityForDay({ businessId, workerId, dateKey }) {

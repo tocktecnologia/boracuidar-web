@@ -33,12 +33,15 @@ Exemplo:
 
 ```env
 VITE_BOOKING_API_URL=https://boracuidar-booking-api-xxxxxx-uc.a.run.app
+VITE_PUBLIC_POSTHOG_KEY=phc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+VITE_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
 ```
 
 Observacao importante:
 
 - se `VITE_BOOKING_API_URL` estiver definida, o frontend usa o backend server-side para criar e validar agendamentos;
 - se nao estiver definida, o frontend usa o fluxo legado client-side como fallback.
+- se `VITE_PUBLIC_POSTHOG_KEY` estiver definida, o frontend ativa analytics e session replay com PostHog.
 
 Build:
 
@@ -112,6 +115,7 @@ O script:
 - instrumentacao de performance para casos lentos
 - cache curto na pagina de servicos
 - criacao e validacao de agendamento movidas para backend quando `VITE_BOOKING_API_URL` estiver ativa
+- integracao opcional com PostHog para analytics de produto e session replay
 
 ## Arquivos locais que nao devem ser commitados
 
