@@ -2020,6 +2020,11 @@ p {
   white-space: nowrap;
 }
 
+.booking-field-error {
+  margin: -2px 0 2px;
+  font-size: 0.86rem;
+}
+
 .booking-picker-list {
   display: grid;
   gap: 8px;
@@ -2055,6 +2060,69 @@ p {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.booking-saving-dialog {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 8px 4px 4px;
+}
+
+.booking-saving-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #edf8fb;
+  color: var(--primary);
+  border: 1px solid #c7e5ef;
+}
+
+.booking-saving-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.booking-saving-copy h3 {
+  font-size: 1.15rem;
+}
+
+.booking-saving-copy p {
+  color: #5d7087;
+  line-height: 1.45;
+}
+
+.booking-saving-progress {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6edf5;
+}
+
+.booking-saving-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary) 0%, #11a3cc 100%);
+  transition: width 240ms ease;
+}
+
+.booking-saving-meta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #40546d;
+  font-size: 0.9rem;
+}
+
+.booking-saving-meta strong {
+  color: #173047;
 }
 
 .search-row {

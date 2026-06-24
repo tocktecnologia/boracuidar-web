@@ -26,6 +26,8 @@ import { measureAsync, queuePerfEvent } from "../../lib/observability";
 const SEARCH_HORIZON_DAYS = 60;
 const WINDOW_DAYS = 7;
 const SLOTS_PER_PAGE = 6;
+const WHATSAPP_DIGIT_COUNT = 13;
+const BOOKING_SAVE_ESTIMATE_MS = 12000;
 
 function statusCanceled(status) {
   const normalized = String(status ?? "").trim().toLowerCase();
@@ -34,6 +36,29 @@ function statusCanceled(status) {
 
 function normalizePhoneDigits(value) {
   return String(value ?? "").replace(/\D/g, "");
+}
+
+function formatWhatsappMask(value) {
+  const rawDigits = normalizePhoneDigits(value);
+  if (!rawDigits) return "";
+
+  const digits = (rawDigits.startsWith("55") ? rawDigits : `55${rawDigits}`).slice(0, WHATSAPP_DIGIT_COUNT);
+  const country = digits.slice(0, 2);
+  const area = digits.slice(2, 4);
+  const ninthDigit = digits.slice(4, 5);
+  const firstBlock = digits.slice(5, 9);
+  const lastBlock = digits.slice(9, 13);
+
+  let formatted = `+${country}`;
+  if (area) {
+    formatted += ` (${area}`;
+    if (area.length === 2) formatted += ")";
+  }
+  if (ninthDigit) formatted += ` ${ninthDigit}`;
+  if (firstBlock) formatted += ` ${firstBlock}`;
+  if (lastBlock) formatted += `-${lastBlock}`;
+
+  return formatted;
 }
 
 function dateKey(date) {
@@ -132,6 +157,7 @@ export default function BookingDialog({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [askingCustomer, setAskingCustomer] = useState(false);
+  const [saveProgress, setSaveProgress] = useState({ percent: 0, remainingSeconds: 0 });
   const [error, setError] = useState("");
 
   const [today, setToday] = useState(() => asDateOnly(new Date()));
@@ -158,6 +184,8 @@ export default function BookingDialog({
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerWhatsapp, setCustomerWhatsapp] = useState("");
+  const [customerNameError, setCustomerNameError] = useState("");
+  const [customerWhatsappError, setCustomerWhatsappError] = useState("");
   const [lastName, setLastName] = useState("");
   const [lastWhatsapp, setLastWhatsapp] = useState("");
 
@@ -542,8 +570,10 @@ export default function BookingDialog({
       setAddServiceOpen(false);
       setServicesExpanded(false);
       setCustomerOpen(false);
+      setCustomerNameError("");
+      setCustomerWhatsappError("");
       const safeInitialName = String(initialCustomerName ?? "").trim();
-      const safeInitialWhatsapp = String(initialCustomerWhatsapp ?? "").trim();
+      const safeInitialWhatsapp = formatWhatsappMask(initialCustomerWhatsapp);
       setLastName(safeInitialName);
       setLastWhatsapp(safeInitialWhatsapp);
       setCustomerName(safeInitialName);
@@ -703,6 +733,20 @@ export default function BookingDialog({
 
     captureEvent("booking_dialog_opened", analyticsProps());
   }, [isOpen, posthog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!saving && !askingCustomer) return undefined;
+
+    const startedAt = Date.now();
+    const intervalId = window.setInterval(() => {
+      const elapsedMs = Date.now() - startedAt;
+      const percent = Math.min(95, Math.max(8, Math.round((elapsedMs / BOOKING_SAVE_ESTIMATE_MS) * 92)));
+      const remainingSeconds = Math.max(0, Math.ceil((BOOKING_SAVE_ESTIMATE_MS - elapsedMs) / 1000));
+      setSaveProgress({ percent, remainingSeconds });
+    }, 250);
+
+    return () => window.clearInterval(intervalId);
+  }, [askingCustomer, saving]);
 
   useEffect(() => {
     if (!isOpen || !selectedWorkerId || loading) return;
@@ -927,8 +971,28 @@ export default function BookingDialog({
 
     setCustomerName(lastName);
     setCustomerWhatsapp(lastWhatsapp);
+    setCustomerNameError("");
+    setCustomerWhatsappError("");
+    setError("");
     setCustomerOpen(true);
     captureEvent("booking_customer_prompt_opened", analyticsProps());
+  }
+
+  function handleCustomerNameChange(event) {
+    setCustomerName(event.target.value);
+
+    if (customerNameError && event.target.value.trim()) {
+      setCustomerNameError("");
+    }
+  }
+
+  function handleCustomerWhatsappChange(event) {
+    const formattedWhatsapp = formatWhatsappMask(event.target.value);
+    setCustomerWhatsapp(formattedWhatsapp);
+
+    if (customerWhatsappError && normalizePhoneDigits(formattedWhatsapp).length === WHATSAPP_DIGIT_COUNT) {
+      setCustomerWhatsappError("");
+    }
   }
 
   async function handleCreateBooking() {
@@ -937,21 +1001,33 @@ export default function BookingDialog({
 
     const cleanName = customerName.trim();
     const cleanPhoneDigits = normalizePhoneDigits(customerWhatsapp);
+    let hasCustomerError = false;
 
     if (!cleanName) {
-      setError("Informe seu nome para confirmar o agendamento.");
-      return;
+      setCustomerNameError("Informe seu nome para confirmar o agendamento.");
+      hasCustomerError = true;
+    } else {
+      setCustomerNameError("");
     }
 
-    if (cleanPhoneDigits.length < 12) {
-      setError("Informe um WhatsApp valido no formato brasileiro.");
+    if (cleanPhoneDigits.length !== WHATSAPP_DIGIT_COUNT) {
+      setCustomerWhatsappError("Numero de WhatsApp incompleto.");
+      hasCustomerError = true;
+    } else {
+      setCustomerWhatsappError("");
+    }
+
+    if (hasCustomerError) {
+      setError("");
       return;
     }
 
     setCustomerOpen(false);
     setAskingCustomer(true);
+    setSaveProgress({ percent: 8, remainingSeconds: Math.ceil(BOOKING_SAVE_ESTIMATE_MS / 1000) });
     setSaving(true);
     setError("");
+    setCustomerWhatsappError("");
     captureEvent("booking_submit_attempted", analyticsProps());
 
     const totalStartedAt = performance.now();
@@ -1113,7 +1189,7 @@ export default function BookingDialog({
       }
 
       setLastName(cleanName);
-      setLastWhatsapp(customerWhatsapp.trim());
+      setLastWhatsapp(formatWhatsappMask(cleanPhoneDigits));
       setSlotConflict(false);
       captureEvent("booking_submit_succeeded", analyticsProps({ agendamento_id: createdIds[0] }));
       onSuccess?.(createdIds[0], confirmationPayload);
@@ -1489,15 +1565,7 @@ export default function BookingDialog({
                 </div>
 
                 <button className="cta-btn booking-main-action" onClick={handleStartBooking} disabled={!canSchedule} type="button">
-                  {saving ? (
-                    <>
-                      <Loader2 size={16} className="spin" /> Salvando...
-                    </>
-                  ) : (
-                    <>
-                      <CalendarDays size={17} /> Agendar
-                    </>
-                  )}
+                  <CalendarDays size={17} /> Agendar
                 </button>
               </footer>
             </>
@@ -1543,18 +1611,36 @@ export default function BookingDialog({
             id="booking-customer-name"
             className="ph-no-capture"
             value={customerName}
-            onChange={(event) => setCustomerName(event.target.value)}
+            onChange={handleCustomerNameChange}
             placeholder="Seu nome completo"
+            aria-invalid={customerNameError ? "true" : "false"}
+            aria-describedby={customerNameError ? "booking-customer-name-error" : undefined}
           />
+          {customerNameError ? (
+            <p id="booking-customer-name-error" className="error-text booking-field-error">
+              {customerNameError}
+            </p>
+          ) : null}
 
           <label htmlFor="booking-customer-phone">Whatsapp</label>
           <input
             id="booking-customer-phone"
             className="ph-no-capture"
+            type="tel"
+            inputMode="numeric"
+            autoComplete="tel"
             value={customerWhatsapp}
-            onChange={(event) => setCustomerWhatsapp(event.target.value)}
-            placeholder="+55 (00) 0 0000-0000"
+            onChange={handleCustomerWhatsappChange}
+            placeholder="+55 (##) # ####-####"
+            maxLength={20}
+            aria-invalid={customerWhatsappError ? "true" : "false"}
+            aria-describedby={customerWhatsappError ? "booking-customer-phone-error" : undefined}
           />
+          {customerWhatsappError ? (
+            <p id="booking-customer-phone-error" className="error-text booking-field-error">
+              {customerWhatsappError}
+            </p>
+          ) : null}
 
           <div className="booking-customer-actions">
             <button className="ghost-btn" type="button" onClick={() => setCustomerOpen(false)} disabled={saving}>
@@ -1563,6 +1649,35 @@ export default function BookingDialog({
             <button className="cta-btn" type="button" onClick={handleCreateBooking} disabled={saving}>
               Confirmar
             </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={saving || askingCustomer} maxWidth={390}>
+        <div className="booking-saving-dialog" role="status" aria-live="polite">
+          <div className="booking-saving-icon">
+            <Loader2 size={24} className="spin" />
+          </div>
+          <div className="booking-saving-copy">
+            <h3>Confirmando agendamento</h3>
+            <p>Estamos reservando seu horario e validando a disponibilidade.</p>
+          </div>
+          <div
+            className="booking-saving-progress"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={saveProgress.percent}
+          >
+            <span style={{ width: `${saveProgress.percent}%` }} />
+          </div>
+          <div className="booking-saving-meta">
+            <strong>{saveProgress.percent}%</strong>
+            <span>
+              {saveProgress.remainingSeconds > 0
+                ? `Tempo estimado: ${saveProgress.remainingSeconds}s`
+                : "Finalizando..."}
+            </span>
           </div>
         </div>
       </Modal>
