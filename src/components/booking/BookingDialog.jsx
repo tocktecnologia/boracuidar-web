@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePostHog } from "@posthog/react";
 import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Plus, UserRound, X } from "lucide-react";
 import Modal from "../common/Modal";
 import {
@@ -12,7 +13,15 @@ import {
   shouldBlockN8nForBusinessRow,
   toJsonSafe,
 } from "../../lib/firestore";
+import {
+  createBookingViaApi,
+  isBookingApiEnabled,
+  loadBookingAvailability,
+  loadBookingBootstrap,
+} from "../../lib/bookingApi";
 import { asDateOnly, firstText, formatMoney, overlaps, parseDate, parseTimeOnDate, sameMinute, toInt, toNumber } from "../../lib/marketplace";
+import { captureEvent } from "../../lib/posthog";
+import { measureAsync, queuePerfEvent } from "../../lib/observability";
 
 const SEARCH_HORIZON_DAYS = 60;
 const WINDOW_DAYS = 7;
@@ -119,6 +128,7 @@ export default function BookingDialog({
   onClose,
   onSuccess,
 }) {
+  const posthog = usePostHog();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [askingCustomer, setAskingCustomer] = useState(false);
@@ -155,6 +165,7 @@ export default function BookingDialog({
   const slotsCacheRef = useRef(new Map());
   const scheduleRowsCacheRef = useRef(new Map());
   const refreshTokenRef = useRef(0);
+  const apiEnabled = isBookingApiEnabled();
 
   const serviceById = useMemo(() => {
     const map = {};
@@ -208,6 +219,48 @@ export default function BookingDialog({
     }
     return rows;
   }, [selectedStart, selectedServiceIds, serviceById]);
+
+  function supportedServiceSet(workerId) {
+    const raw = workerServiceMap[workerId] ?? [];
+    if (raw instanceof Set) return raw;
+    if (Array.isArray(raw)) return new Set(raw);
+    return new Set();
+  }
+
+  function totalDurationForIds(serviceIds, lookup = serviceById) {
+    return serviceIds.reduce((sum, id) => sum + serviceDuration(lookup[id]), 0);
+  }
+
+  function slotDateFromApi(date, slot) {
+    const [hours, minutes] = String(slot?.startTime ?? "00:00").split(":").map((value) => Number(value) || 0);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes);
+  }
+
+  function normalizeApiSlotStates(date, apiSlotStates) {
+    return Array.isArray(apiSlotStates)
+      ? apiSlotStates.map((slot) => ({
+          start: slotDateFromApi(date, slot),
+          available: Boolean(slot?.available),
+          occupied: Boolean(slot?.occupied),
+        }))
+      : [];
+  }
+
+  function analyticsProps(extra = {}) {
+    return {
+      business_id: businessId,
+      initial_service_id: initialServiceId ?? undefined,
+      worker_id: selectedWorkerId ?? undefined,
+      selected_service_ids: selectedServiceIds,
+      selected_service_count: selectedServiceIds.length,
+      selected_date: selectedDate ? dateKey(selectedDate) : undefined,
+      selected_start: selectedStart ? timeLabel(selectedStart) : undefined,
+      total_duration_minutes: totalDuration,
+      total_price: totalPrice,
+      booking_mode: isBookingApiEnabled() ? "backend" : "client",
+      ...extra,
+    };
+  }
 
   function clearAvailabilityCache() {
     dayCacheRef.current.clear();
@@ -388,11 +441,31 @@ export default function BookingDialog({
   }
 
   async function availableStartsFor(workerId, date, durationMinutes) {
+    if (apiEnabled) {
+      const payload = await loadBookingAvailability({
+        businessId,
+        workerId,
+        durationMinutes,
+        fromDateKey: dateKey(date),
+        selectedDateKey: dateKey(date),
+        days: 1,
+      });
+      return normalizeApiSlotStates(date, payload?.slotStates).filter((slot) => slot.available).map((slot) => slot.start);
+    }
+
     const states = await slotStatesFor(workerId, date, durationMinutes);
     return states.filter((slot) => slot.available).map((slot) => slot.start);
   }
 
-  async function refreshStarts({ workerId, date, serviceIds, keepSelected = false, preferredStart = null, resetSlotOffset = true }) {
+  async function refreshStarts({
+    workerId,
+    date,
+    serviceIds,
+    keepSelected = false,
+    preferredStart = null,
+    resetSlotOffset = true,
+    serviceLookup = serviceById,
+  }) {
     const requestId = refreshTokenRef.current + 1;
     refreshTokenRef.current = requestId;
 
@@ -403,13 +476,34 @@ export default function BookingDialog({
       return [];
     }
 
-    const nextDuration = serviceIds.reduce((sum, id) => sum + serviceDuration(serviceById[id]), 0);
-    const nextSlotStates = await slotStatesFor(workerId, date, nextDuration);
+    const nextDuration = totalDurationForIds(serviceIds, serviceLookup);
+    let nextDateCounts = null;
+
+    let nextSlotStates;
+    if (apiEnabled) {
+      const windowStart = new Date(today.getTime() + dateOffset * 86400000);
+      const payload = await loadBookingAvailability({
+        businessId,
+        workerId,
+        durationMinutes: nextDuration,
+        fromDateKey: dateKey(windowStart),
+        selectedDateKey: dateKey(date),
+        days: WINDOW_DAYS,
+      });
+      nextSlotStates = normalizeApiSlotStates(date, payload?.slotStates);
+      nextDateCounts = payload?.dateCounts ?? {};
+    } else {
+      nextSlotStates = await slotStatesFor(workerId, date, nextDuration);
+    }
+
     const starts = nextSlotStates.filter((slot) => slot.available).map((slot) => slot.start);
 
     if (refreshTokenRef.current !== requestId) return starts;
 
     setSlotStates(nextSlotStates);
+    if (nextDateCounts) {
+      setDateCounts((current) => ({ ...current, ...nextDateCounts }));
+    }
     if (resetSlotOffset) setSlotOffset(0);
 
     if (starts.length === 0) {
@@ -460,56 +554,77 @@ export default function BookingDialog({
       setToday(nowToday);
 
       try {
-        const [rawServices, rawWorkers, rawLinks, rawBusiness] = await Promise.all([
-          queryRows({
-            table: "servicos",
-            conditions: [
-              { field: "ativo", operator: "eq", value: true },
-              { field: "business_id", operator: "eq", value: businessId },
-            ],
-            orders: [{ field: "nome", ascending: true }],
-          }),
-          queryRows({
-            table: "trabalhadores",
-            conditions: [
-              { field: "ativo", operator: "eq", value: true },
-              { field: "business_id", operator: "eq", value: businessId },
-            ],
-            orders: [{ field: "nome", ascending: true }],
-          }),
-          queryRows({
-            table: "trabalhador_servico",
-            conditions: [{ field: "business_id", operator: "eq", value: businessId }],
-          }),
-          queryRows({
-            table: "business",
-            conditions: [{ field: "id", operator: "eq", value: businessId }],
-            limit: 1,
-          }),
-        ]);
+        const bootstrap = await measureAsync("booking_dialog_bootstrap", async () => {
+          if (apiEnabled) {
+            return loadBookingBootstrap(businessId);
+          }
+
+          const [rawServices, rawWorkers, rawLinks, rawBusiness] = await Promise.all([
+            queryRows({
+              table: "servicos",
+              conditions: [
+                { field: "ativo", operator: "eq", value: true },
+                { field: "business_id", operator: "eq", value: businessId },
+              ],
+              orders: [{ field: "nome", ascending: true }],
+            }),
+            queryRows({
+              table: "trabalhadores",
+              conditions: [
+                { field: "ativo", operator: "eq", value: true },
+                { field: "business_id", operator: "eq", value: businessId },
+              ],
+              orders: [{ field: "nome", ascending: true }],
+            }),
+            queryRows({
+              table: "trabalhador_servico",
+              conditions: [{ field: "business_id", operator: "eq", value: businessId }],
+            }),
+            queryRows({
+              table: "business",
+              conditions: [{ field: "id", operator: "eq", value: businessId }],
+              limit: 1,
+            }),
+          ]);
+
+          return {
+            services: rawServices,
+            workers: rawWorkers,
+            workerServiceMap: (() => {
+              const parsedMap = {};
+              if (rawLinks.length > 0) {
+                for (const link of rawLinks) {
+                  const workerId = toInt(link.trabalhador_id);
+                  const serviceId = toInt(link.servico_id);
+                  if (!workerId || !serviceId) continue;
+                  if (!parsedMap[workerId]) parsedMap[workerId] = [];
+                  if (!parsedMap[workerId].includes(serviceId)) {
+                    parsedMap[workerId].push(serviceId);
+                  }
+                }
+              } else {
+                const allServiceIds = rawServices.map((service) => service.id);
+                for (const worker of rawWorkers) {
+                  parsedMap[worker.id] = allServiceIds;
+                }
+              }
+              return parsedMap;
+            })(),
+            business: rawBusiness[0] ?? {},
+          };
+        }, { businessId });
 
         if (!active) return;
+
+        const rawServices = Array.isArray(bootstrap?.services) ? bootstrap.services : [];
+        const rawWorkers = Array.isArray(bootstrap?.workers) ? bootstrap.workers : [];
+        const parsedMap = bootstrap?.workerServiceMap ?? {};
+        const rawBusiness = bootstrap?.business ?? {};
 
         if (rawServices.length === 0 || rawWorkers.length === 0) {
           setError("Nao ha servicos ou profissionais disponiveis neste estabelecimento.");
           setLoading(false);
           return;
-        }
-
-        const parsedMap = {};
-        if (rawLinks.length > 0) {
-          for (const link of rawLinks) {
-            const workerId = toInt(link.trabalhador_id);
-            const serviceId = toInt(link.servico_id);
-            if (!workerId || !serviceId) continue;
-            if (!parsedMap[workerId]) parsedMap[workerId] = new Set();
-            parsedMap[workerId].add(serviceId);
-          }
-        } else {
-          const allServiceIds = rawServices.map((service) => service.id);
-          for (const worker of rawWorkers) {
-            parsedMap[worker.id] = new Set(allServiceIds);
-          }
         }
 
         const serviceIdsSorted = rawServices
@@ -525,10 +640,17 @@ export default function BookingDialog({
         setServices(rawServices);
         setWorkers(rawWorkers);
         setWorkerServiceMap(parsedMap);
-        setBusinessRow(rawBusiness[0] ?? {});
+        setBusinessRow(rawBusiness);
         setSelectedServiceIds([preferredServiceId]);
+        const rawServiceById = Object.fromEntries(rawServices.map((service) => [service.id, service]));
 
-        const workersForService = rawWorkers.filter((worker) => (parsedMap[worker.id] ?? new Set()).has(preferredServiceId));
+        const localWorkerSupportsService = (workerId, serviceId) => {
+          const rawSupported = parsedMap?.[workerId] ?? [];
+          if (rawSupported instanceof Set) return rawSupported.has(serviceId);
+          return Array.isArray(rawSupported) ? rawSupported.includes(serviceId) : false;
+        };
+
+        const workersForService = rawWorkers.filter((worker) => localWorkerSupportsService(worker.id, preferredServiceId));
         const initialWorkerId = workersForService[0]?.id ?? null;
 
         if (!initialWorkerId) {
@@ -556,6 +678,7 @@ export default function BookingDialog({
           date: nowToday,
           serviceIds: [preferredServiceId],
           keepSelected: false,
+          serviceLookup: rawServiceById,
         });
 
         if (!active) return;
@@ -575,7 +698,15 @@ export default function BookingDialog({
   }, [businessId, initialCustomerName, initialCustomerWhatsapp, initialServiceId, isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!isOpen) return;
+    if (!posthog) return;
+
+    captureEvent("booking_dialog_opened", analyticsProps());
+  }, [isOpen, posthog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!isOpen || !selectedWorkerId || loading) return;
+    if (apiEnabled) return;
 
     let active = true;
     const dates = Array.from({ length: WINDOW_DAYS }, (_, index) => new Date(today.getTime() + (dateOffset + index) * 86400000));
@@ -602,7 +733,27 @@ export default function BookingDialog({
       active = false;
       window.clearTimeout(timeoutId);
     };
-  }, [isOpen, selectedWorkerId, dateOffset, today, totalDuration, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [apiEnabled, isOpen, selectedWorkerId, dateOffset, today, totalDuration, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!apiEnabled || !isOpen || loading || saving || askingCustomer) return;
+    if (!selectedWorkerId || !selectedDate || selectedServiceIds.length === 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void refreshStarts({
+        workerId: selectedWorkerId,
+        date: selectedDate,
+        serviceIds: selectedServiceIds,
+        keepSelected: true,
+        preferredStart: selectedStart,
+        resetSlotOffset: false,
+      });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [apiEnabled, isOpen, loading, saving, askingCustomer, selectedWorkerId, selectedDate, selectedServiceIds, dateOffset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isOpen || loading || saving || askingCustomer) return;
@@ -612,9 +763,11 @@ export default function BookingDialog({
     const refreshIntervalMs = 20000;
 
     const syncLiveAvailability = async () => {
-      dayCacheRef.current.clear();
-      slotsCacheRef.current.clear();
-      scheduleRowsCacheRef.current.clear();
+      if (!apiEnabled) {
+        dayCacheRef.current.clear();
+        slotsCacheRef.current.clear();
+        scheduleRowsCacheRef.current.clear();
+      }
 
       const currentStart = selectedStart ? new Date(selectedStart) : null;
       const starts = await refreshStarts({
@@ -637,7 +790,7 @@ export default function BookingDialog({
       active = false;
       window.clearInterval(timer);
     };
-  }, [isOpen, loading, saving, askingCustomer, selectedWorkerId, selectedDate, selectedServiceIds, selectedStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [apiEnabled, isOpen, loading, saving, askingCustomer, selectedWorkerId, selectedDate, selectedServiceIds, selectedStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSelectDate(date) {
     if (saving) return;
@@ -657,7 +810,7 @@ export default function BookingDialog({
   async function handleSelectWorker(workerId) {
     if (saving) return;
 
-    const supported = workerServiceMap[workerId] ?? new Set();
+    const supported = supportedServiceSet(workerId);
     const canSupport = selectedServiceIds.every((serviceId) => supported.has(serviceId));
     if (!canSupport) {
       setError("Esse profissional nao atende os servicos selecionados.");
@@ -681,7 +834,7 @@ export default function BookingDialog({
   async function fitsCurrentSelection(nextServiceIds) {
     if (!selectedWorkerId || !selectedDate || !selectedStart) return false;
 
-    const duration = nextServiceIds.reduce((sum, serviceId) => sum + serviceDuration(serviceById[serviceId]), 0);
+    const duration = totalDurationForIds(nextServiceIds);
     const starts = await availableStartsFor(selectedWorkerId, selectedDate, duration);
     return starts.some((start) => sameMinute(start, selectedStart));
   }
@@ -694,7 +847,7 @@ export default function BookingDialog({
       return;
     }
 
-    const supported = workerServiceMap[selectedWorkerId] ?? new Set();
+    const supported = supportedServiceSet(selectedWorkerId);
     const candidates = services.filter((service) => !selectedServiceIds.includes(service.id) && supported.has(service.id));
 
     if (candidates.length === 0) {
@@ -775,6 +928,7 @@ export default function BookingDialog({
     setCustomerName(lastName);
     setCustomerWhatsapp(lastWhatsapp);
     setCustomerOpen(true);
+    captureEvent("booking_customer_prompt_opened", analyticsProps());
   }
 
   async function handleCreateBooking() {
@@ -798,6 +952,9 @@ export default function BookingDialog({
     setAskingCustomer(true);
     setSaving(true);
     setError("");
+    captureEvent("booking_submit_attempted", analyticsProps());
+
+    const totalStartedAt = performance.now();
 
     try {
       const currentStart = selectedStart ? new Date(selectedStart) : null;
@@ -807,7 +964,11 @@ export default function BookingDialog({
       }
 
       clearAvailabilityCache();
-      const latestStarts = await availableStartsFor(selectedWorkerId, selectedDate, totalDuration > 0 ? totalDuration : 30);
+      const latestStarts = await measureAsync(
+        "booking_validate_latest_starts",
+        () => availableStartsFor(selectedWorkerId, selectedDate, totalDuration > 0 ? totalDuration : 30),
+        { businessId, workerId: selectedWorkerId, selectedServiceCount: selectedServiceIds.length },
+      );
       if (!latestStarts.some((start) => sameMinute(start, currentStart))) {
         await refreshStarts({
           workerId: selectedWorkerId,
@@ -817,19 +978,7 @@ export default function BookingDialog({
         });
         setError("Outra pessoa acabou de reservar esse horario. Escolha um novo horario para continuar.");
         setSlotConflict(true);
-        return;
-      }
-
-      const limitCheck = await checkScheduleCreationLimit({
-        businessId,
-        additionalSchedules: selectedServiceIds.length,
-        workerId: selectedWorkerId,
-        referenceDate: selectedDate,
-        businessRow,
-      });
-
-      if (limitCheck.allowed !== true) {
-        setError(limitCheck.message ?? "Limite do plano atingido para novos agendamentos.");
+        captureEvent("booking_slot_conflict", analyticsProps({ reason: "latest_start_unavailable" }));
         return;
       }
 
@@ -855,62 +1004,144 @@ export default function BookingDialog({
         cursor = end;
       }
 
-      const insertedSchedules = await createSchedulesAtomically({
-        businessId,
-        workerId: selectedWorkerId,
-        customerName: cleanName,
-        customerPhone: cleanPhoneDigits,
-        dateKey: selectedDateKey,
-        reminderCount,
-        status: "confirmado",
-        schedules: scheduleRequests,
-      });
+      let createdIds = [];
+      let confirmationPayload = null;
+      let asyncSideEffects = [];
 
-      const createdIds = [];
-      for (const inserted of insertedSchedules) {
-        const insertedId = toInt(inserted?.id);
-        if (insertedId) {
-          createdIds.push(insertedId);
-        }
-
-        const serviceId = toInt(inserted?.servico_id);
-        const service = serviceById[serviceId];
-        const scheduleStart = String(inserted?.hora_inicio ?? "").trim();
-
-        await insertRow({
-          table: "notifications",
-          data: {
-            business_id: businessId,
-            title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${scheduleStart || "--:--"}!`,
-            message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
-            trabalhador_nome: workerName,
-            type: "agendamento",
-          },
+      if (isBookingApiEnabled()) {
+        const apiResult = await measureAsync("booking_create_via_api", () => createBookingViaApi({
+          businessId,
+          workerId: selectedWorkerId,
+          customerName: cleanName,
+          customerPhone: cleanPhoneDigits,
+          dateKey: selectedDateKey,
+          schedules: scheduleRequests,
+        }), {
+          businessId,
+          workerId: selectedWorkerId,
+          selectedServiceCount: selectedServiceIds.length,
+          dateKey: selectedDateKey,
         });
 
-        if (!blockN8n) {
-          fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              agendamento: toJsonSafe(inserted),
-              business: toJsonSafe(businessRow),
-            }),
-          }).catch(() => {});
+        createdIds = Array.isArray(apiResult?.createdIds)
+          ? apiResult.createdIds.map((item) => toInt(item)).filter(Boolean)
+          : [];
+        confirmationPayload = apiResult?.confirmationPayload ?? null;
+      } else {
+        const limitCheck = await measureAsync("booking_check_limit", () => checkScheduleCreationLimit({
+          businessId,
+          additionalSchedules: selectedServiceIds.length,
+          workerId: selectedWorkerId,
+          referenceDate: selectedDate,
+          businessRow,
+        }), { businessId, workerId: selectedWorkerId, selectedServiceCount: selectedServiceIds.length });
+
+        if (limitCheck.allowed !== true) {
+          setError(limitCheck.message ?? "Limite do plano atingido para novos agendamentos.");
+          captureEvent("booking_submit_failed", analyticsProps({ reason: "plan_limit", error_code: "booking/plan-limit" }));
+          return;
         }
+
+        const insertedSchedules = await measureAsync("booking_create_schedules", () => createSchedulesAtomically({
+          businessId,
+          workerId: selectedWorkerId,
+          customerName: cleanName,
+          customerPhone: cleanPhoneDigits,
+          dateKey: selectedDateKey,
+          reminderCount,
+          status: "confirmado",
+          schedules: scheduleRequests,
+        }), {
+          businessId,
+          workerId: selectedWorkerId,
+          selectedServiceCount: selectedServiceIds.length,
+          dateKey: selectedDateKey,
+        });
+
+        createdIds = [];
+        asyncSideEffects = [];
+        for (const inserted of insertedSchedules) {
+          const insertedId = toInt(inserted?.id);
+          if (insertedId) {
+            createdIds.push(insertedId);
+          }
+
+          const serviceId = toInt(inserted?.servico_id);
+          const service = serviceById[serviceId];
+          const scheduleStart = String(inserted?.hora_inicio ?? "").trim();
+
+          asyncSideEffects.push(
+            insertRow({
+              table: "notifications",
+              data: {
+                business_id: businessId,
+                title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${scheduleStart || "--:--"}!`,
+                message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
+                trabalhador_nome: workerName,
+                type: "agendamento",
+              },
+            }).catch(() => null),
+          );
+
+          if (!blockN8n) {
+            asyncSideEffects.push(
+              fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  agendamento: toJsonSafe(inserted),
+                  business: toJsonSafe(businessRow),
+                }),
+              }).catch(() => null),
+            );
+          }
+        }
+
+        confirmationPayload = {
+          schedule: insertedSchedules[0],
+          business: businessRow,
+          worker: worker ?? {},
+          service: selectedServices[0] ?? serviceById[toInt(insertedSchedules[0]?.servico_id)] ?? {},
+          totalPrice,
+        };
       }
 
       if (createdIds.length === 0) {
         setError("Nao foi possivel criar o agendamento.");
+        captureEvent("booking_submit_failed", analyticsProps({ reason: "empty_created_ids" }));
         return;
       }
 
       setLastName(cleanName);
       setLastWhatsapp(customerWhatsapp.trim());
       setSlotConflict(false);
-      onSuccess?.(createdIds[0]);
+      captureEvent("booking_submit_succeeded", analyticsProps({ agendamento_id: createdIds[0] }));
+      onSuccess?.(createdIds[0], confirmationPayload);
       onClose?.("success");
+      Promise.allSettled(asyncSideEffects).catch(() => {});
+      queuePerfEvent({
+        name: "booking_submit_total",
+        durationMs: performance.now() - totalStartedAt,
+        context: {
+          businessId,
+          workerId: selectedWorkerId,
+          selectedServiceCount: selectedServiceIds.length,
+          dateKey: selectedDateKey,
+        },
+      });
     } catch (submitError) {
+      queuePerfEvent({
+        name: "booking_submit_total",
+        durationMs: performance.now() - totalStartedAt,
+        context: {
+          businessId,
+          workerId: selectedWorkerId,
+          selectedServiceCount: selectedServiceIds.length,
+          dateKey: selectedDate ? dateKey(selectedDate) : "",
+        },
+        error: submitError,
+        force: true,
+      });
       if (isBookingSlotTakenError(submitError) || isBookingSlotUnavailableError(submitError)) {
         clearAvailabilityCache();
         await refreshStarts({
@@ -924,10 +1155,18 @@ export default function BookingDialog({
           : submitError.message || "Esse horario nao cabe mais na disponibilidade atual do profissional.";
         setError(message);
         setSlotConflict(true);
+        captureEvent("booking_slot_conflict", analyticsProps({
+          reason: isBookingSlotTakenError(submitError) ? "slot_taken" : "slot_unavailable",
+          error_code: String(submitError?.code ?? ""),
+        }));
         return;
       }
       setError(`Erro ao agendar: ${submitError.message}`);
       setSlotConflict(false);
+      captureEvent("booking_submit_failed", analyticsProps({
+        error_code: String(submitError?.code ?? ""),
+        error_message: String(submitError?.message ?? "").slice(0, 160),
+      }));
     } finally {
       setAskingCustomer(false);
       setSaving(false);
@@ -1097,6 +1336,10 @@ export default function BookingDialog({
                               if (!slot.available) return;
                               setSlotConflict(false);
                               setSelectedStart(slot.start);
+                              captureEvent("booking_slot_selected", analyticsProps({
+                                selected_date: selectedDate ? dateKey(selectedDate) : undefined,
+                                selected_start: timeLabel(slot.start),
+                              }));
                             }}
                             disabled={!slot.available}
                             type="button"
@@ -1119,7 +1362,15 @@ export default function BookingDialog({
                   )}
                 </section>
 
-                <button className="booking-add-service" type="button" onClick={handleOpenAddService} disabled={saving}>
+                <button
+                  className="booking-add-service"
+                  type="button"
+                  onClick={() => {
+                    captureEvent("booking_add_service_opened", analyticsProps());
+                    handleOpenAddService();
+                  }}
+                  disabled={saving}
+                >
                   <Plus size={18} /> Adicionar outro servico
                 </button>
 
@@ -1200,7 +1451,7 @@ export default function BookingDialog({
                   <div className="worker-chip-wrap">
                     {workerIdsSorted.map((workerId) => {
                       const worker = workers.find((entry) => entry.id === workerId);
-                      const supported = workerServiceMap[workerId] ?? new Set();
+                      const supported = supportedServiceSet(workerId);
                       const enabled = selectedServiceIds.every((serviceId) => supported.has(serviceId));
                       const selected = workerId === selectedWorkerId;
                       const name = worker?.nome ?? "Profissional";
@@ -1290,6 +1541,7 @@ export default function BookingDialog({
           <label htmlFor="booking-customer-name">Nome</label>
           <input
             id="booking-customer-name"
+            className="ph-no-capture"
             value={customerName}
             onChange={(event) => setCustomerName(event.target.value)}
             placeholder="Seu nome completo"
@@ -1298,6 +1550,7 @@ export default function BookingDialog({
           <label htmlFor="booking-customer-phone">Whatsapp</label>
           <input
             id="booking-customer-phone"
+            className="ph-no-capture"
             value={customerWhatsapp}
             onChange={(event) => setCustomerWhatsapp(event.target.value)}
             placeholder="+55 (00) 0 0000-0000"

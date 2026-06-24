@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+.env.production
+.ftp-deploy-sync-state-web.json
 
 # Editor directories and files
 .vscode/*

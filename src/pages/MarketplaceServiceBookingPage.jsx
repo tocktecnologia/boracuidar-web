@@ -5,6 +5,7 @@ import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import BookingDialog from "../components/booking/BookingDialog";
 import { queryRows } from "../lib/firestore";
 import { firstText } from "../lib/marketplace";
+import { measureAsync } from "../lib/observability";
 
 function serviceIdCandidates(rawServiceId) {
   const text = String(rawServiceId ?? "").trim();
@@ -42,43 +43,51 @@ export default function MarketplaceServiceBookingPage() {
       setError("");
 
       try {
-        const candidates = serviceIdCandidates(serviceId);
-        if (candidates.length === 0) {
-          throw new Error("service_id ausente na URL.");
-        }
+        const { currentService, businessRows, pageRows } = await measureAsync("service_booking_page_load", async () => {
+          const candidates = serviceIdCandidates(serviceId);
+          if (candidates.length === 0) {
+            throw new Error("service_id ausente na URL.");
+          }
 
-        let serviceRows = [];
-        for (const candidate of candidates) {
-          serviceRows = await queryRows({
-            table: "servicos",
-            conditions: [{ field: "id", operator: "eq", value: candidate }],
-            limit: 1,
-          });
-          if (serviceRows.length > 0) break;
-        }
+          let serviceRows = [];
+          for (const candidate of candidates) {
+            serviceRows = await queryRows({
+              table: "servicos",
+              conditions: [{ field: "id", operator: "eq", value: candidate }],
+              limit: 1,
+            });
+            if (serviceRows.length > 0) break;
+          }
 
-        if (serviceRows.length === 0) {
-          throw new Error("Servico nao encontrado.");
-        }
+          if (serviceRows.length === 0) {
+            throw new Error("Servico nao encontrado.");
+          }
 
-        const currentService = serviceRows[0];
-        const businessId = String(currentService.business_id ?? "").trim();
-        if (!businessId) {
-          throw new Error("Servico sem business_id.");
-        }
+          const resolvedService = serviceRows[0];
+          const resolvedBusinessId = String(resolvedService.business_id ?? "").trim();
+          if (!resolvedBusinessId) {
+            throw new Error("Servico sem business_id.");
+          }
 
-        const [businessRows, pageRows] = await Promise.all([
-          queryRows({
-            table: "business",
-            conditions: [{ field: "id", operator: "eq", value: businessId }],
-            limit: 1,
-          }),
-          queryRows({
-            table: "business-page",
-            conditions: [{ field: "business_id", operator: "eq", value: businessId }],
-            limit: 1,
-          }),
-        ]);
+          const [resolvedBusinessRows, resolvedPageRows] = await Promise.all([
+            queryRows({
+              table: "business",
+              conditions: [{ field: "id", operator: "eq", value: resolvedBusinessId }],
+              limit: 1,
+            }),
+            queryRows({
+              table: "business-page",
+              conditions: [{ field: "business_id", operator: "eq", value: resolvedBusinessId }],
+              limit: 1,
+            }),
+          ]);
+
+          return {
+            currentService: resolvedService,
+            businessRows: resolvedBusinessRows,
+            pageRows: resolvedPageRows,
+          };
+        }, { serviceId });
 
         if (!mounted) return;
 
@@ -115,9 +124,10 @@ export default function MarketplaceServiceBookingPage() {
     return `/marketplace/business/services?businessId=${encodeURIComponent(businessId)}`;
   }, [businessId]);
 
-  function handleBookingSuccess(agendamentoId) {
+  function handleBookingSuccess(agendamentoId, confirmationPayload = null) {
     navigate(
       `/marketplace/confirmation?agendamentoId=${encodeURIComponent(agendamentoId)}&businessId=${encodeURIComponent(businessId)}`,
+      confirmationPayload ? { state: { confirmationPayload } } : undefined,
     );
   }
 
