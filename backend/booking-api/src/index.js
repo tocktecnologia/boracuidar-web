@@ -19,6 +19,7 @@ const AVAILABILITY_STEP_MINUTES = 30;
 const BOOKING_SLOT_TAKEN_CODE = "booking/slot-taken";
 const BOOKING_SLOT_UNAVAILABLE_CODE = "booking/slot-unavailable";
 const RESPONSE_CACHE_TTL_MS = Number(process.env.BOOKING_CACHE_TTL_MS || 15000);
+const BOOKING_TIMEZONE = String(process.env.BOOKING_TIMEZONE || "America/Fortaleza").trim() || "America/Fortaleza";
 
 const DEFAULT_SUBSCRIPTIONS = [
   { name: "free", label: "Free", max_schedules_month: 100, max_pre_reminder: 20, allow_n8n: false, block_all_n8n: true },
@@ -63,6 +64,25 @@ function shouldBlockN8nForBusinessRow(businessRow) {
 
 function formatDateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function zonedNowParts(timeZone = BOOKING_TIMEZONE) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const dateKey = `${values.year}-${values.month}-${values.day}`;
+  const minuteOfDay = Number(values.hour) * 60 + Number(values.minute);
+
+  return { dateKey, minuteOfDay };
 }
 
 function parseDateOnlyIsoLocal(text) {
@@ -483,7 +503,7 @@ async function bookingAvailabilityPayload({ businessId, workerId, durationMinute
 
   const lastDate = addDays(startDate, normalizedDays - 1);
   const lastDateKey = formatDateKey(lastDate);
-  const now = new Date();
+  const now = zonedNowParts();
 
   return cachedJson(
     "availability",
@@ -542,8 +562,8 @@ async function bookingAvailabilityPayload({ businessId, workerId, durationMinute
         const targetDate = addDays(startDate, index);
         const targetDateKey = formatDateKey(targetDate);
         const minutesNow =
-          formatDateKey(targetDate) === formatDateKey(now)
-            ? now.getHours() * 60 + now.getMinutes()
+          targetDateKey === now.dateKey
+            ? now.minuteOfDay
             : null;
 
         const availability = buildDailyAvailability({
