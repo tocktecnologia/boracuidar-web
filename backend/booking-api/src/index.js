@@ -189,6 +189,19 @@ function slotLockIdsForRange({ businessId, workerId, dateKey, startTime, endTime
   return ids;
 }
 
+function lockIdsForScheduleRow(row) {
+  if (Array.isArray(row?.lock_ids) && row.lock_ids.length > 0) {
+    return row.lock_ids.map((item) => String(item)).filter(Boolean);
+  }
+  return slotLockIdsForRange({
+    businessId: row?.business_id,
+    workerId: row?.trabalhador_id,
+    dateKey: row?.data_agendamento,
+    startTime: row?.hora_inicio ?? row?.start_time,
+    endTime: row?.hora_fim ?? row?.end_time,
+  });
+}
+
 function buildSlotTakenError() {
   const error = new Error("Este horario acabou de ser preenchido por outra pessoa. Escolha outro horario.");
   error.code = BOOKING_SLOT_TAKEN_CODE;
@@ -204,6 +217,11 @@ function buildSlotUnavailableError(message = "Esse horario nao cabe na disponibi
 function isCancelledStatus(status) {
   const text = String(status ?? "").trim().toLowerCase();
   return text === "cancelado" || text === "canceled" || text === "cancelled";
+}
+
+function isConfirmedStatus(status) {
+  const text = String(status ?? "").trim().toLowerCase();
+  return text === "confirmado" || text === "confirmed";
 }
 
 function generateIntId() {
@@ -433,7 +451,7 @@ function buildDailyAvailability({ targetDate, workRows, exceptionRows, scheduleR
   }
 
   for (const schedule of scheduleRows) {
-    if (isCancelledStatus(schedule?.status)) continue;
+    if (!isConfirmedStatus(schedule?.status)) continue;
     const blockedRange = parseMinuteRange(schedule.hora_inicio ?? schedule.start_time, schedule.hora_fim ?? schedule.end_time);
     if (blockedRange) blocked.push(blockedRange);
   }
@@ -767,6 +785,7 @@ async function createSchedulesAtomically({ businessId, workerId, customerName, c
   }));
 
   const lockRefsById = new Map();
+  const lockOwnerById = new Map();
   for (const schedule of preparedSchedules) {
     const lockIds = slotLockIdsForRange({
       businessId: normalizedBusinessId,
@@ -780,6 +799,7 @@ async function createSchedulesAtomically({ businessId, workerId, customerName, c
     }
     schedule.lock_ids = lockIds;
     for (const lockId of lockIds) {
+      lockOwnerById.set(lockId, schedule);
       if (!lockRefsById.has(lockId)) {
         lockRefsById.set(lockId, db.collection(BOOKING_SLOT_LOCKS_TABLE).doc(lockId));
       }
@@ -805,11 +825,14 @@ async function createSchedulesAtomically({ businessId, workerId, customerName, c
       const existing = existingSnapshot.data() ?? {};
       if (String(existing.business_id ?? "").trim() !== normalizedBusinessId) continue;
       if (Number(existing.trabalhador_id) !== normalizedWorkerId) continue;
-      if (isCancelledStatus(existing.status)) continue;
 
       const existingStart = parseClockToMinute(existing.hora_inicio ?? existing.start_time);
       const existingEnd = parseClockToMinute(existing.hora_fim ?? existing.end_time);
-      const existingLocks = Array.isArray(existing.lock_ids) ? existing.lock_ids : [];
+      const existingLocks = lockIdsForScheduleRow(existing);
+
+      if (!isConfirmedStatus(existing.status)) {
+        continue;
+      }
 
       if (existingLocks.some((lockId) => lockRefsById.has(lockId))) {
         throw buildSlotTakenError();
@@ -821,10 +844,35 @@ async function createSchedulesAtomically({ businessId, workerId, customerName, c
       }
     }
 
-    for (const lockRef of lockRefsById.values()) {
+    for (const [lockId, lockRef] of lockRefsById.entries()) {
       const lockSnapshot = await transaction.get(lockRef);
-      if (lockSnapshot.exists) {
-        throw buildSlotTakenError();
+      if (!lockSnapshot.exists) continue;
+
+      const lockData = lockSnapshot.data() ?? {};
+      const ownerScheduleId = String(lockData.schedule_id ?? lockData.agendamento_id ?? "").trim();
+
+      if (ownerScheduleId) {
+        const ownerSnapshot = await transaction.get(db.collection("agendamentos").doc(ownerScheduleId));
+        if (!ownerSnapshot.exists) continue;
+
+        const owner = ownerSnapshot.data() ?? {};
+        const ownerLocks = lockIdsForScheduleRow(owner);
+        const ownerStart = parseClockToMinute(owner.hora_inicio ?? owner.start_time);
+        const ownerEnd = parseClockToMinute(owner.hora_fim ?? owner.end_time);
+        const ownerMatchesScope =
+          String(owner.business_id ?? "").trim() === normalizedBusinessId &&
+          Number(owner.trabalhador_id) === normalizedWorkerId &&
+          normalizeDateKey(owner.data_agendamento) === normalizedDateKey;
+        const ownerUsesLock = ownerLocks.includes(lockId);
+        const ownerOverlapsRequest =
+          ownerStart != null &&
+          ownerEnd != null &&
+          ownerEnd > ownerStart &&
+          normalizedSchedules.some((requested) => overlapsMinuteRanges(requested.startMinute, requested.endMinute, ownerStart, ownerEnd));
+
+        if (ownerMatchesScope && isConfirmedStatus(owner.status) && (ownerUsesLock || ownerOverlapsRequest)) {
+          throw buildSlotTakenError();
+        }
       }
     }
 
@@ -833,11 +881,17 @@ async function createSchedulesAtomically({ businessId, workerId, customerName, c
     }
 
     for (const [lockId, lockRef] of lockRefsById.entries()) {
+      const schedule = lockOwnerById.get(lockId);
       transaction.set(lockRef, {
         id: lockId,
+        schedule_id: String(schedule?.id ?? ""),
+        agendamento_id: schedule?.id ?? null,
         business_id: normalizedBusinessId,
         trabalhador_id: normalizedWorkerId,
         data_agendamento: normalizedDateKey,
+        hora_inicio: schedule?.hora_inicio ?? "",
+        hora_fim: schedule?.hora_fim ?? "",
+        status: schedule?.status ?? status,
         created_at: new Date(),
       });
     }

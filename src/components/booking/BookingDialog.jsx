@@ -3,15 +3,9 @@ import { usePostHog } from "@posthog/react";
 import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Plus, UserRound, X } from "lucide-react";
 import Modal from "../common/Modal";
 import {
-  checkScheduleCreationLimit,
-  createSchedulesAtomically,
-  insertRow,
   isBookingSlotUnavailableError,
   isBookingSlotTakenError,
   queryRows,
-  reminderCountForBusinessRow,
-  shouldBlockN8nForBusinessRow,
-  toJsonSafe,
 } from "../../lib/firestore";
 import {
   createBookingViaApi,
@@ -982,11 +976,6 @@ export default function BookingDialog({
         return;
       }
 
-      const worker = workers.find((entry) => entry.id === selectedWorkerId);
-      const workerName = worker?.nome ?? "Profissional";
-      const reminderCount = reminderCountForBusinessRow(businessRow);
-      const blockN8n = shouldBlockN8nForBusinessRow(businessRow);
-
       const selectedDateKey = dateKey(selectedDate);
       const scheduleRequests = [];
       let cursor = new Date(selectedStart);
@@ -1006,105 +995,31 @@ export default function BookingDialog({
 
       let createdIds = [];
       let confirmationPayload = null;
-      let asyncSideEffects = [];
 
-      if (isBookingApiEnabled()) {
-        const apiResult = await measureAsync("booking_create_via_api", () => createBookingViaApi({
-          businessId,
-          workerId: selectedWorkerId,
-          customerName: cleanName,
-          customerPhone: cleanPhoneDigits,
-          dateKey: selectedDateKey,
-          schedules: scheduleRequests,
-        }), {
-          businessId,
-          workerId: selectedWorkerId,
-          selectedServiceCount: selectedServiceIds.length,
-          dateKey: selectedDateKey,
-        });
-
-        createdIds = Array.isArray(apiResult?.createdIds)
-          ? apiResult.createdIds.map((item) => toInt(item)).filter(Boolean)
-          : [];
-        confirmationPayload = apiResult?.confirmationPayload ?? null;
-      } else {
-        const limitCheck = await measureAsync("booking_check_limit", () => checkScheduleCreationLimit({
-          businessId,
-          additionalSchedules: selectedServiceIds.length,
-          workerId: selectedWorkerId,
-          referenceDate: selectedDate,
-          businessRow,
-        }), { businessId, workerId: selectedWorkerId, selectedServiceCount: selectedServiceIds.length });
-
-        if (limitCheck.allowed !== true) {
-          setError(limitCheck.message ?? "Limite do plano atingido para novos agendamentos.");
-          captureEvent("booking_submit_failed", analyticsProps({ reason: "plan_limit", error_code: "booking/plan-limit" }));
-          return;
-        }
-
-        const insertedSchedules = await measureAsync("booking_create_schedules", () => createSchedulesAtomically({
-          businessId,
-          workerId: selectedWorkerId,
-          customerName: cleanName,
-          customerPhone: cleanPhoneDigits,
-          dateKey: selectedDateKey,
-          reminderCount,
-          status: "confirmado",
-          schedules: scheduleRequests,
-        }), {
-          businessId,
-          workerId: selectedWorkerId,
-          selectedServiceCount: selectedServiceIds.length,
-          dateKey: selectedDateKey,
-        });
-
-        createdIds = [];
-        asyncSideEffects = [];
-        for (const inserted of insertedSchedules) {
-          const insertedId = toInt(inserted?.id);
-          if (insertedId) {
-            createdIds.push(insertedId);
-          }
-
-          const serviceId = toInt(inserted?.servico_id);
-          const service = serviceById[serviceId];
-          const scheduleStart = String(inserted?.hora_inicio ?? "").trim();
-
-          asyncSideEffects.push(
-            insertRow({
-              table: "notifications",
-              data: {
-                business_id: businessId,
-                title: `Voce tem um servico de ${service?.nome ?? "servico"} para ${selectedDateKey}, as ${scheduleStart || "--:--"}!`,
-                message: `O cliente ${cleanName} acabou de agendar um servico. Telefone de contato: ${cleanPhoneDigits}.`,
-                trabalhador_nome: workerName,
-                type: "agendamento",
-              },
-            }).catch(() => null),
-          );
-
-          if (!blockN8n) {
-            asyncSideEffects.push(
-              fetch("https://n8n.tock.app.br/webhook/gatilho-agendamento-new", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  agendamento: toJsonSafe(inserted),
-                  business: toJsonSafe(businessRow),
-                }),
-              }).catch(() => null),
-            );
-          }
-        }
-
-        confirmationPayload = {
-          schedule: insertedSchedules[0],
-          business: businessRow,
-          worker: worker ?? {},
-          service: selectedServices[0] ?? serviceById[toInt(insertedSchedules[0]?.servico_id)] ?? {},
-          totalPrice,
-        };
+      if (!isBookingApiEnabled()) {
+        setError("Agendamento pelo backend indisponivel. Tente novamente em instantes.");
+        captureEvent("booking_submit_failed", analyticsProps({ reason: "booking_api_disabled" }));
+        return;
       }
+
+      const apiResult = await measureAsync("booking_create_via_api", () => createBookingViaApi({
+        businessId,
+        workerId: selectedWorkerId,
+        customerName: cleanName,
+        customerPhone: cleanPhoneDigits,
+        dateKey: selectedDateKey,
+        schedules: scheduleRequests,
+      }), {
+        businessId,
+        workerId: selectedWorkerId,
+        selectedServiceCount: selectedServiceIds.length,
+        dateKey: selectedDateKey,
+      });
+
+      createdIds = Array.isArray(apiResult?.createdIds)
+        ? apiResult.createdIds.map((item) => toInt(item)).filter(Boolean)
+        : [];
+      confirmationPayload = apiResult?.confirmationPayload ?? null;
 
       if (createdIds.length === 0) {
         setError("Nao foi possivel criar o agendamento.");
@@ -1118,7 +1033,6 @@ export default function BookingDialog({
       captureEvent("booking_submit_succeeded", analyticsProps({ agendamento_id: createdIds[0] }));
       onSuccess?.(createdIds[0], confirmationPayload);
       onClose?.("success");
-      Promise.allSettled(asyncSideEffects).catch(() => {});
       queuePerfEvent({
         name: "booking_submit_total",
         durationMs: performance.now() - totalStartedAt,
