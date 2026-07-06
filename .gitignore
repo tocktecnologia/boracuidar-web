@@ -13,6 +13,10 @@ dist-ssr
 *.local
 .env.production
 .ftp-deploy-sync-state-web.json
+deploy/workflow-hostgator/secrets.env
+
+# Backend moved to ../boracuidar-backend
+backend/
 
 # Editor directories and files
 .vscode/*

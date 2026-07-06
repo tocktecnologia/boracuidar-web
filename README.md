@@ -7,12 +7,11 @@ Frontend publico do marketplace Bora Cuidar, responsavel por descoberta de negoc
 - React + Vite
 - React Router
 - Firebase Web SDK
-- Cloud Run para criacao/validacao server-side de agendamentos
+- Backend separado em `../boracuidar-backend` para criacao/validacao server-side de agendamentos
 
 ## Estrutura principal
 
 - `src/`: frontend web
-- `backend/booking-api`: backend Node/Express para agendamento em Cloud Run
 - `deploy/workflow-hostgator`: script de build + deploy FTPS do frontend
 - `docs/`: documentacao operacional e de negocio
 
@@ -51,42 +50,19 @@ npm run build
 
 ## Backend de agendamento
 
-O backend foi criado em `backend/booking-api` para mover do cliente para o servidor:
+O backend nao fica mais neste repositorio. Ele foi isolado em:
 
-- validacao de limite de agendamentos
-- validacao de disponibilidade
-- criacao atomica com locks de horario
-- notificacoes internas
-- webhook de automacao
-
-Documentacao detalhada:
-
-- [docs/BOOKING_BACKEND.md](docs/BOOKING_BACKEND.md)
-
-Instalacao local:
-
-```bash
-cd backend/booking-api
-npm install
+```text
+../boracuidar-backend
 ```
 
-Execucao local:
+Repositorio remoto:
 
-```bash
-npm run dev
+```text
+git@github.com-tocktecnologia:tocktecnologia/boracuidar-backend.git
 ```
 
-Healthcheck:
-
-```bash
-GET /health
-```
-
-Endpoint principal:
-
-```bash
-POST /api/bookings/create
-```
+Este frontend consome a API configurada em `VITE_BOOKING_API_URL`.
 
 ## Deploy do frontend
 
