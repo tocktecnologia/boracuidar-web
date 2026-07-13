@@ -13,7 +13,7 @@ export default function MarketplaceLayout({ children, hideTopbar = false, fullWi
             <a className="about-btn" href="https://business.boracuidar.app">
               Sobre
             </a>
-            <a className="signin-btn" href="https://business.boracuidar.app/signin">
+            <a className="signin-btn" href="https://boracuidar.app/signin">
               Entrar
             </a>
           </div>

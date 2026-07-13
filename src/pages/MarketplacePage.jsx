@@ -401,7 +401,7 @@ export default function MarketplacePage() {
               <p>Mostre sua pagina, receba novos clientes e transforme visitas em agendamentos.</p>
               <div className="market-business-cta-actions">
                 <a href="https://business.boracuidar.app/signup" className="market-signup-btn">Cadastrar meu negocio</a>
-                <a href="https://business.boracuidar.app/signin" className="market-signin-btn">Ja tenho conta</a>
+                <a href="https://boracuidar.app/signin" className="market-signin-btn">Ja tenho conta</a>
               </div>
             </section>
           </>
