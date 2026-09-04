@@ -15,12 +15,12 @@ import {
 import { motion } from "framer-motion";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import BookingDialog from "../components/booking/BookingDialog";
+import BusinessSchedulesDialog from "../components/schedules/BusinessSchedulesDialog";
 import StarRating from "../components/common/StarRating";
 import { queryRows } from "../lib/firestore";
 import { measureAsync } from "../lib/observability";
 import {
   coverFromPageOrBusiness,
-  digitsOnly,
   evaluationSummary,
   extractPageFromBusiness,
   firstText,
@@ -32,8 +32,10 @@ import {
   whatsappHref,
 } from "../lib/marketplace";
 
-function useBusinessRouteState() {
+function useBusinessRouteState(providedBusinessId) {
   const { search } = useLocation();
+  const provided = String(providedBusinessId ?? "").trim();
+  if (provided) return { businessId: provided, redirectToServices: false };
   const raw = new URLSearchParams(search).get("businessId")?.trim() ?? "";
   if (!raw) return { businessId: "", redirectToServices: false };
   const normalized = raw.replace(/\/+$/, "");
@@ -70,8 +72,8 @@ function isAnonymousEvaluation(row) {
   return normalized.includes("anonymous") || normalized.includes("anonim");
 }
 
-export default function MarketplaceBusinessPage() {
-  const { businessId, redirectToServices } = useBusinessRouteState();
+export default function MarketplaceBusinessPage({ businessId: providedBusinessId }) {
+  const { businessId, redirectToServices } = useBusinessRouteState(providedBusinessId);
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -83,6 +85,7 @@ export default function MarketplaceBusinessPage() {
   const [evaluations, setEvaluations] = useState([]);
 
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [schedulesDialogOpen, setSchedulesDialogOpen] = useState(false);
   const [bookingServiceId, setBookingServiceId] = useState(null);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [serviceQuery, setServiceQuery] = useState("");
@@ -262,11 +265,6 @@ export default function MarketplaceBusinessPage() {
 
   const contactPhone = firstText([page?.contact, page?.phone, business.whatsapp, business.telefone]);
   const whatsappLink = whatsappHref(contactPhone);
-  const whatsappBotPhone = firstText([business.whatsapp_bot, business.whatsapp, business.telefone, page?.contact, page?.phone]);
-  const whatsappBotDigits = digitsOnly(whatsappBotPhone);
-  const mySchedulesWhatsappLink = whatsappBotDigits
-    ? `https://wa.me/${whatsappBotDigits}?text=${encodeURIComponent("/meus_agendamentos")}`
-    : null;
   const address = firstText([page?.address, business.endereco, page?.city, business.cidade]) ?? "Endereco em atualizacao";
   const cityLabel = firstText([business.cidade, page?.city]);
   const mapQuery = encodeURIComponent(`${businessName} ${address}`);
@@ -316,15 +314,9 @@ export default function MarketplaceBusinessPage() {
             <button className="cta-btn business-book-now-btn" onClick={() => openBooking()}>
               <CalendarClock size={16} /> Agendar agora
             </button>
-            {mySchedulesWhatsappLink ? (
-              <a className="ghost-btn" href={mySchedulesWhatsappLink} target="_blank" rel="noreferrer">
-                Meus agendamentos
-              </a>
-            ) : (
-              <Link className="ghost-btn" to={`/marketplace/meus-agendamentos?businessId=${encodeURIComponent(businessId)}`}>
-                Meus agendamentos
-              </Link>
-            )}
+            <button className="ghost-btn" onClick={() => setSchedulesDialogOpen(true)} type="button">
+              Meus agendamentos
+            </button>
           </div>
         </motion.header>
 
@@ -477,6 +469,14 @@ export default function MarketplaceBusinessPage() {
         onClose={() => setBookingOpen(false)}
         onSuccess={handleBookingSuccess}
       />
+      {schedulesDialogOpen ? (
+        <BusinessSchedulesDialog
+          isOpen
+          onClose={() => setSchedulesDialogOpen(false)}
+          businessId={businessId}
+          businessName={businessName}
+        />
+      ) : null}
     </MarketplaceLayout>
   );
 }

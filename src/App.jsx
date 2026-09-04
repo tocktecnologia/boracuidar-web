@@ -4,6 +4,7 @@ import PostHogPageTracker from "./components/analytics/PostHogPageTracker";
 
 const MarketplacePage = lazy(() => import("./pages/MarketplacePage"));
 const MarketplaceBusinessPage = lazy(() => import("./pages/MarketplaceBusinessPage"));
+const BusinessAliasPage = lazy(() => import("./pages/BusinessAliasPage"));
 const MarketplaceBusinessServicesPage = lazy(() => import("./pages/MarketplaceBusinessServicesPage"));
 const MarketplaceServiceBookingPage = lazy(() => import("./pages/MarketplaceServiceBookingPage"));
 const MarketplaceBusinessReviewsPage = lazy(() => import("./pages/MarketplaceBusinessReviewsPage"));
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="/marketplace/meus-agendamentos" element={<MarketplaceMySchedulesPage />} />
           <Route path="/marketplace/meus-agendamentos/:agendamentoId" element={<MarketplaceScheduleDetailPage />} />
           <Route path="/marketplace/confirmation" element={<MarketplaceConfirmationPage />} />
+          <Route path="/:businessAlias" element={<BusinessAliasPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </>

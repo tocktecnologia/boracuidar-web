@@ -14,6 +14,13 @@ import {
   typeLabel,
 } from "../lib/marketplace";
 
+function publicBusinessPath({ id, alias }) {
+  const normalizedAlias = String(alias ?? "").trim();
+  return normalizedAlias
+    ? `/${encodeURIComponent(normalizedAlias)}`
+    : `/marketplace/business?businessId=${encodeURIComponent(id)}`;
+}
+
 function minimumPrice(services) {
   const values = services.map((service) => toNumber(service.preco)).filter((price) => price > 0);
   if (values.length === 0) return 0;
@@ -108,6 +115,7 @@ export default function MarketplacePage() {
 
           parsed.push({
             id: businessId,
+            alias: String(business.business_alias ?? "").trim(),
             name: firstText([business.nome, page?.title]) ?? "Estabelecimento",
             category: typeLabel(business.business_type),
             city: firstText([business.cidade, page?.city]) ?? "",
@@ -270,7 +278,7 @@ export default function MarketplacePage() {
                   <Link
                     key={item.id}
                     className="estab-carousel-card-link"
-                    to={`/marketplace/business?businessId=${encodeURIComponent(item.id)}`}
+                    to={publicBusinessPath(item)}
                   >
                     <article className="estab-carousel-card">
                       <div className="carousel-cover-wrap">
@@ -327,7 +335,7 @@ export default function MarketplacePage() {
                   <Link
                     key={item.id}
                     className="estab-grid-card-link"
-                    to={`/marketplace/business?businessId=${encodeURIComponent(item.id)}`}
+                    to={publicBusinessPath(item)}
                   >
                     <article className="estab-grid-card">
                       <div className="carousel-cover-wrap">
