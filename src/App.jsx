@@ -11,6 +11,7 @@ const MarketplaceBusinessReviewsPage = lazy(() => import("./pages/MarketplaceBus
 const MarketplaceMySchedulesPage = lazy(() => import("./pages/MarketplaceMySchedulesPage"));
 const MarketplaceScheduleDetailPage = lazy(() => import("./pages/MarketplaceScheduleDetailPage"));
 const MarketplaceConfirmationPage = lazy(() => import("./pages/MarketplaceConfirmationPage"));
+const SignupPage = lazy(() => import("./pages/SignupPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 function RouteFallback() {
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/marketplace/meus-agendamentos" element={<MarketplaceMySchedulesPage />} />
           <Route path="/marketplace/meus-agendamentos/:agendamentoId" element={<MarketplaceScheduleDetailPage />} />
           <Route path="/marketplace/confirmation" element={<MarketplaceConfirmationPage />} />
+          <Route path="/signup" element={<SignupPage />} />
           <Route path="/:businessAlias" element={<BusinessAliasPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

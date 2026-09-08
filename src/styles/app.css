@@ -103,6 +103,11 @@ textarea:focus {
   color: #fff;
 }
 
+.hero-topbar .signup-btn {
+  background: #fff;
+  color: #173047;
+}
+
 .hero-topbar .about-btn {
   background: rgba(255, 255, 255, 0.13);
   color: #fff;
@@ -138,6 +143,16 @@ textarea:focus {
   font-weight: 700;
 }
 
+.signup-btn {
+  border-radius: 999px;
+  border: 0;
+  background: var(--primary);
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
 .topbar-actions {
   display: inline-flex;
   align-items: center;
@@ -153,6 +168,64 @@ textarea:focus {
   font-size: 0.92rem;
   font-weight: 700;
 }
+
+.signup-page {
+  width: min(100%, 940px);
+  margin: 42px auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  align-items: center;
+  gap: clamp(36px, 8vw, 96px);
+}
+
+.signup-intro h1 {
+  margin: 14px 0;
+  font-size: clamp(2.3rem, 5vw, 4.5rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  color: #18324b;
+}
+
+.signup-intro p {
+  max-width: 460px;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 1.04rem;
+}
+
+.signup-back,
+.signup-eyebrow,
+.signup-email-confirmed {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 750;
+}
+
+.signup-back { color: #496075; font-size: 0.9rem; }
+.signup-eyebrow { margin-top: 42px; color: var(--primary-dark); text-transform: uppercase; letter-spacing: 0.11em; font-size: 0.72rem; }
+
+.signup-panel {
+  border: 1px solid #dce6ef;
+  border-radius: 20px;
+  padding: clamp(24px, 5vw, 38px);
+  display: grid;
+  gap: 14px;
+  box-shadow: 0 24px 60px rgba(35, 58, 82, 0.11);
+  background: #fff;
+}
+
+.signup-panel h2 { margin: 0; color: #1e3047; font-size: 1.5rem; }
+.signup-panel p { margin: 0; color: var(--muted); line-height: 1.5; }
+.signup-panel label { font-size: 0.9rem; font-weight: 750; color: #344961; }
+.signup-primary { width: 100%; min-height: 48px; margin-top: 8px; }
+.signup-text-button { justify-self: end; border: 0; background: transparent; color: var(--primary-dark); font-weight: 750; cursor: pointer; }
+.signup-icon { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: var(--primary-dark); background: #e8f7fa; }
+.signup-progress { color: var(--primary-dark); font-size: 0.8rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
+.signup-feedback { font-size: 0.9rem; }
+.signup-complete { display: grid; gap: 14px; text-align: center; justify-items: center; padding: 18px 0; }
+.signup-complete svg { color: var(--success); }
+.signup-email-confirmed { padding: 9px 11px; border-radius: 9px; background: #edf8f1; color: #28724a !important; font-size: 0.88rem; }
 
 .brand-badge {
   display: inline-flex;
@@ -2407,6 +2480,14 @@ p {
   .topbar {
     padding: 10px;
   }
+
+  .signup-page {
+    margin: 24px auto;
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+
+  .signup-eyebrow { margin-top: 26px; }
 
   .booksy-search-panel,
   .service-row,
