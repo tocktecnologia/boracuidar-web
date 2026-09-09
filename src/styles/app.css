@@ -153,6 +153,10 @@ textarea:focus {
   font-weight: 800;
 }
 
+.signup-btn-hidden {
+  display: none;
+}
+
 .topbar-actions {
   display: inline-flex;
   align-items: center;

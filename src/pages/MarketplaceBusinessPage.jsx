@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from "react";
+import { useRef } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
   CalendarClock,
@@ -89,6 +90,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
   const [bookingServiceId, setBookingServiceId] = useState(null);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [serviceQuery, setServiceQuery] = useState("");
+  const servicesSectionRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -221,6 +223,10 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
     setBookingOpen(true);
   }
 
+  function scrollToServices() {
+    servicesSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function handleBookingSuccess(agendamentoId, confirmationPayload = null) {
     navigate(
       `/marketplace/confirmation?agendamentoId=${encodeURIComponent(agendamentoId)}&businessId=${encodeURIComponent(businessId)}`,
@@ -311,7 +317,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
             <Link className="market-back-link" to="/marketplace">
               Voltar ao marketplace
             </Link>
-            <button className="cta-btn business-book-now-btn" onClick={() => openBooking()}>
+            <button className="cta-btn business-book-now-btn" type="button" onClick={scrollToServices}>
               <CalendarClock size={16} /> Agendar agora
             </button>
             <button className="ghost-btn" onClick={() => setSchedulesDialogOpen(true)} type="button">
@@ -327,7 +333,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
               <div className="business-stage-overlay" />
               <div className="business-stage-caption">
                 <h2>{description}</h2>
-                <button className="cta-btn" onClick={() => openBooking()}>
+                <button className="cta-btn" type="button" onClick={scrollToServices}>
                   <CalendarClock size={15} /> Agendar
                 </button>
               </div>
@@ -355,7 +361,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
               ))}
             </motion.div>
 
-            <section className="business-services-panel">
+            <section ref={servicesSectionRef} className="business-services-panel">
               <div className="business-services-head">
                 <h2>Servicos</h2>
                 <label className="business-service-search">
