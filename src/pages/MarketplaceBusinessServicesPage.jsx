@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { CalendarClock, MapPin, Search } from "lucide-react";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import { queryRows } from "../lib/firestore";
-import { digitsOnly, firstText, formatMoney, toInt } from "../lib/marketplace";
+import { digitsOnly, extractPageFromBusiness, firstText, formatMoney, toInt } from "../lib/marketplace";
 import { measureAsync } from "../lib/observability";
 import { readSessionCache, writeSessionCache } from "../lib/sessionCache";
 
@@ -116,11 +116,11 @@ export default function MarketplaceBusinessServicesPage() {
 
         setBusiness(businessRows[0]);
         setServices(serviceRows);
-        setPage(pageRows[0] ?? null);
+        setPage(extractPageFromBusiness(businessRows[0]) ?? pageRows[0] ?? null);
         writeSessionCache(cacheKey, {
           business: businessRows[0],
           services: serviceRows,
-          page: pageRows[0] ?? null,
+          page: extractPageFromBusiness(businessRows[0]) ?? pageRows[0] ?? null,
         });
       } catch (loadError) {
         if (!mounted) return;

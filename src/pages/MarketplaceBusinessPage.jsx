@@ -25,6 +25,7 @@ import {
   evaluationSummary,
   extractPageFromBusiness,
   firstText,
+  formatBusinessHours,
   formatDateTime,
   formatMoney,
   toBool,
@@ -266,7 +267,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
 
   const businessName = firstText([business.nome, page?.title]) ?? "Estabelecimento";
   const description =
-    firstText([page?.headline, page?.short_description, page?.about, business.descricao]) ??
+    firstText([page?.about, page?.headline, page?.short_description, business.descricao]) ??
     "Estabelecimento parceiro do Bora Cuidar.";
 
   const contactPhone = firstText([page?.contact, page?.phone, business.whatsapp, business.telefone]);
@@ -275,9 +276,10 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
   const cityLabel = firstText([business.cidade, page?.city]);
   const mapQuery = encodeURIComponent(`${businessName} ${address}`);
   const mapEmbedSrc = `https://maps.google.com/maps?q=${mapQuery}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-  const hoursLabel =
-    firstText([page?.opening_hours, page?.hours_text, business?.horario_funcionamento]) ??
-    "Consulte os horarios disponiveis no agendamento.";
+  const hoursLabel = formatBusinessHours(page, business) ?? "Consulte os horarios disponiveis no agendamento.";
+  const amenities = Array.isArray(page?.amenities)
+    ? page.amenities.map((item) => String(item ?? "").trim()).filter(Boolean).slice(0, 6)
+    : [];
   const selectedPhotoIndex = activePhotoIndex < gallery.length ? activePhotoIndex : 0;
   const activePhoto = gallery[selectedPhotoIndex] ?? cover;
 
@@ -463,6 +465,15 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
                   ) : null}
                 </div>
               </div>
+
+              {amenities.length > 0 ? (
+                <div className="business-side-block">
+                  <h3>Comodidades</h3>
+                  <div className="business-amenities">
+                    {amenities.map((amenity) => <span key={amenity}>{amenity}</span>)}
+                  </div>
+                </div>
+              ) : null}
             </article>
           </motion.aside>
         </div>

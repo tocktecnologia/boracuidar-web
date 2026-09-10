@@ -4,7 +4,7 @@ import { CalendarClock, MapPin } from "lucide-react";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import BookingDialog from "../components/booking/BookingDialog";
 import { queryRows } from "../lib/firestore";
-import { firstText } from "../lib/marketplace";
+import { extractPageFromBusiness, firstText } from "../lib/marketplace";
 import { measureAsync } from "../lib/observability";
 
 function serviceIdCandidates(rawServiceId) {
@@ -97,7 +97,7 @@ export default function MarketplaceServiceBookingPage() {
 
         setService(currentService);
         setBusiness(businessRows[0]);
-        setPage(pageRows[0] ?? null);
+        setPage(extractPageFromBusiness(businessRows[0]) ?? pageRows[0] ?? null);
       } catch (loadError) {
         if (!mounted) return;
         setError(loadError.message);

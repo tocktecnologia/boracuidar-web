@@ -81,12 +81,6 @@ export default function MarketplacePage() {
         }
 
         const pagesByBusiness = {};
-        for (const business of businessRows) {
-          const businessId = String(business.id ?? "").trim();
-          if (!businessId) continue;
-          const inlinePage = extractPageFromBusiness(business);
-          if (inlinePage) pagesByBusiness[businessId] = inlinePage;
-        }
         for (const page of pageRows) {
           const businessId = String(page.business_id ?? page.id ?? "").trim();
           if (!businessId) continue;
@@ -96,6 +90,14 @@ export default function MarketplacePage() {
           const businessId = String(page.business_id ?? page.id ?? "").trim();
           if (!businessId || pagesByBusiness[businessId]) continue;
           pagesByBusiness[businessId] = page;
+        }
+        // The editor publishes the canonical page inside the business
+        // document. Legacy page collections are used only as a fallback.
+        for (const business of businessRows) {
+          const businessId = String(business.id ?? "").trim();
+          if (!businessId) continue;
+          const inlinePage = extractPageFromBusiness(business);
+          if (inlinePage) pagesByBusiness[businessId] = inlinePage;
         }
 
         const parsed = [];
@@ -122,7 +124,7 @@ export default function MarketplacePage() {
             state: firstText([business.estado, page?.state]) ?? "",
             address: firstText([page?.address, business.endereco]) ?? "Endereco em atualizacao",
             description:
-              firstText([page?.short_description, page?.tagline, page?.about, business.descricao]) ??
+              firstText([page?.about, page?.short_description, page?.tagline, business.descricao]) ??
               "Especialistas prontos para te atender com agendamento online.",
             coverUrl: coverFromPageOrBusiness(page, business, index),
             rating: toNumber(business.average_stars || page?.average_rating || reviews.average),

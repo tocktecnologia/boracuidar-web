@@ -70,6 +70,26 @@ export function extractPageFromBusiness(business, preferPending = false) {
   return null;
 }
 
+/**
+ * Formats the current page-editor schema while retaining support for legacy
+ * text fields. The editor persists opening and closing times in
+ * `page.hours.start` and `page.hours.end`.
+ */
+export function formatBusinessHours(page, business) {
+  const hours = page?.hours;
+  if (hours && typeof hours === "object" && !Array.isArray(hours)) {
+    const start = firstText([hours.start, hours.from]);
+    const end = firstText([hours.end, hours.to]);
+    if (start && end) return `${start} as ${end}`;
+  }
+
+  return firstText([
+    page?.opening_hours,
+    page?.hours_text,
+    business?.horario_funcionamento,
+  ]);
+}
+
 export function coverFromPageOrBusiness(page, business, index = 0) {
   const cover = firstText([
     page?.cover_photo,

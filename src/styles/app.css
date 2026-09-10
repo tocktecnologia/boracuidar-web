@@ -1294,6 +1294,21 @@ p {
   gap: 6px;
 }
 
+.business-amenities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.business-amenities span {
+  border: 1px solid #d7e1ec;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #30475f;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .business-services-shortcut {
   width: min(1120px, calc(100% - 24px));
   margin: 14px auto 28px;
