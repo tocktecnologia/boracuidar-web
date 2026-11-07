@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink } from "lucide-react";
 import { queryRows } from "../../lib/firestore";
-import { digitsOnly, firstText, formatDate, formatMoney } from "../../lib/marketplace";
+import { digitsOnly, firstText, formatDate, formatMoney, typeLabel } from "../../lib/marketplace";
+import RotinaBookingNote from "../rotina/RotinaBookingNote";
 import { measureAsync } from "../../lib/observability";
 
 function buildInitialPayload(agendamentoId, initialPayload) {
@@ -32,7 +33,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack, initial
           });
 
           if (schedules.length === 0) {
-            throw new Error("Agendamento nao encontrado.");
+            throw new Error("Agendamento não encontrado.");
           }
 
           const schedule = schedules[0];
@@ -87,7 +88,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack, initial
   }, [agendamentoId, initialResolvedPayload]);
 
   if (loading) {
-    return <div className="confirmation-card">Carregando confirmacao...</div>;
+    return <div className="confirmation-card">Carregando confirmação...</div>;
   }
 
   if (!agendamentoId) {
@@ -102,7 +103,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack, initial
   if (error || !payload) {
     return (
       <div className="confirmation-card">
-        <p className="error-text">{error || "Falha ao carregar confirmacao."}</p>
+        <p className="error-text">{error || "Falha ao carregar confirmação."}</p>
         <button className="ghost-btn" onClick={onBack}>Voltar</button>
       </div>
     );
@@ -121,7 +122,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack, initial
         <CheckCircle2 size={34} />
         <div>
           <h2>Agendamento confirmado</h2>
-          <p>Seu horario foi reservado com sucesso.</p>
+          <p>Seu horário foi reservado com sucesso.</p>
         </div>
       </header>
 
@@ -131,8 +132,8 @@ export default function BookingConfirmationCard({ agendamentoId, onBack, initial
           <dd>{business.nome || "Bora Cuidar"}</dd>
         </div>
         <div>
-          <dt>Servico</dt>
-          <dd>{service.nome || "Servico"}</dd>
+          <dt>Serviço</dt>
+          <dd>{service.nome || "Serviço"}</dd>
         </div>
         <div>
           <dt>Profissional</dt>
@@ -143,7 +144,7 @@ export default function BookingConfirmationCard({ agendamentoId, onBack, initial
           <dd>{formatDate(schedule.data_agendamento)}</dd>
         </div>
         <div>
-          <dt>Horario</dt>
+          <dt>Horário</dt>
           <dd>{schedule.hora_inicio || "--:--"} - {schedule.hora_fim || "--:--"}</dd>
         </div>
         <div>
@@ -151,6 +152,14 @@ export default function BookingConfirmationCard({ agendamentoId, onBack, initial
           <dd>{formatMoney(totalPrice ?? (service.preco || 0))}</dd>
         </div>
       </dl>
+
+      <RotinaBookingNote
+        agendamentoId={schedule.id ?? agendamentoId}
+        serviceName={service.nome}
+        businessName={business.nome}
+        businessCategory={typeLabel(business.business_type)}
+        dateValue={schedule.data_agendamento}
+      />
 
       <footer>
         <button className="ghost-btn" onClick={onBack}>Voltar ao estabelecimento</button>

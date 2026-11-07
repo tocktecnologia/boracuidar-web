@@ -22,7 +22,7 @@ function BusinessAliasResolver({ alias }) {
 
     async function resolveBusiness() {
       if (!alias) {
-        if (mounted) setError("Link do estabelecimento invalido.");
+        if (mounted) setError("Link do estabelecimento inválido.");
         return;
       }
 
@@ -35,17 +35,17 @@ function BusinessAliasResolver({ alias }) {
 
         if (!mounted) return;
         if (rows.length === 0) {
-          setError("Estabelecimento nao encontrado.");
+          setError("Estabelecimento não encontrado.");
           return;
         }
         if (rows.length > 1) {
-          setError("Este link esta associado a mais de um estabelecimento.");
+          setError("Este link está associado a mais de um estabelecimento.");
           return;
         }
 
         setBusinessId(String(rows[0].id ?? "").trim());
       } catch {
-        if (mounted) setError("Nao foi possivel abrir este estabelecimento.");
+        if (mounted) setError("Não foi possível abrir este estabelecimento.");
       }
     }
 
@@ -63,14 +63,14 @@ function BusinessAliasResolver({ alias }) {
 
   if (!error) {
     return (
-      <MarketplaceLayout hideTopbar fullWidth>
+      <MarketplaceLayout fullWidth hideTabBar>
         <p className="section-message">Carregando estabelecimento...</p>
       </MarketplaceLayout>
     );
   }
 
   return (
-    <MarketplaceLayout hideTopbar fullWidth>
+    <MarketplaceLayout fullWidth hideTabBar>
       <div className="section-message">
         <p className="error-text">{error}</p>
         <Link className="ghost-btn" to="/marketplace">Voltar ao marketplace</Link>

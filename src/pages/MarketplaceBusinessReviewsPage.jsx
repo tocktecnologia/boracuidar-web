@@ -67,7 +67,7 @@ export default function MarketplaceBusinessReviewsPage() {
         if (!mounted) return;
 
         if (businessRows.length === 0) {
-          throw new Error("Estabelecimento nao encontrado.");
+          throw new Error("Estabelecimento não encontrado.");
         }
 
         const activeWorkers = workerRows.filter((worker) => worker.ativo !== false);
@@ -132,7 +132,7 @@ export default function MarketplaceBusinessReviewsPage() {
       setSelectedStars(5);
       setComment("");
     } catch (submitError) {
-      setError(`Nao foi possivel enviar avaliacao: ${submitError.message}`);
+      setError(`Não foi possível enviar avaliação: ${submitError.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -144,21 +144,21 @@ export default function MarketplaceBusinessReviewsPage() {
 
   function shareWhatsapp() {
     const businessName = firstText([business?.nome]) ?? "este estabelecimento";
-    const message = `Deixe sua avaliacao para ${businessName}: ${reviewLink(businessId)}`;
+    const message = `Deixe sua avaliação para ${businessName}: ${reviewLink(businessId)}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   }
 
   if (loading) {
     return (
-      <MarketplaceLayout hideTopbar>
-        <p className="section-message">Carregando avaliacoes...</p>
+      <MarketplaceLayout>
+        <p className="section-message">Carregando avaliações...</p>
       </MarketplaceLayout>
     );
   }
 
   if (error && !business) {
     return (
-      <MarketplaceLayout hideTopbar>
+      <MarketplaceLayout>
         <div className="section-message">
           <p className="error-text">{error}</p>
           <Link className="ghost-btn" to="/marketplace">Voltar ao marketplace</Link>
@@ -170,14 +170,14 @@ export default function MarketplaceBusinessReviewsPage() {
   const businessName = firstText([business?.nome]) ?? "Estabelecimento";
 
   return (
-    <MarketplaceLayout hideTopbar>
+    <MarketplaceLayout>
       <section className="reviews-page">
         <header className="surface-block">
-          <h1>Avaliacoes de {businessName}</h1>
-          <p>Compartilhe sua experiencia para ajudar outros clientes.</p>
+          <h1>Avaliações de {businessName}</h1>
+          <p>Compartilhe sua experiência para ajudar outros clientes.</p>
           <div className="hero-meta">
             <span><Star size={14} /> {summary.count > 0 ? `${summary.average.toFixed(1)} de 5` : "Sem notas"}</span>
-            <span>{summary.count} avaliacoes publicadas</span>
+            <span>{summary.count} avaliações publicadas</span>
           </div>
           <div className="review-share-actions">
             <button className="ghost-btn" onClick={copyLink}><Copy size={15} /> Copiar link</button>
@@ -187,7 +187,7 @@ export default function MarketplaceBusinessReviewsPage() {
         </header>
 
         <form className="surface-block review-form" onSubmit={submitEvaluation}>
-          <h2>Escrever avaliacao</h2>
+          <h2>Escrever avaliação</h2>
           <label>Seu nome (opcional)</label>
           <input value={authorName} onChange={(event) => setAuthorName(event.target.value)} placeholder="Seu nome" />
 
@@ -212,7 +212,7 @@ export default function MarketplaceBusinessReviewsPage() {
             ))}
           </div>
 
-          <label>Comentario</label>
+          <label>Comentário</label>
           <textarea
             rows={4}
             value={comment}
@@ -222,12 +222,12 @@ export default function MarketplaceBusinessReviewsPage() {
 
           {error ? <p className="error-text">{error}</p> : null}
 
-          <button className="cta-btn" type="submit" disabled={submitting}>{submitting ? "Enviando..." : "Enviar avaliacao"}</button>
+          <button className="cta-btn" type="submit" disabled={submitting}>{submitting ? "Enviando..." : "Enviar avaliação"}</button>
         </form>
 
         <article className="surface-block">
-          <h2>Ultimas avaliacoes</h2>
-          {evaluations.length === 0 ? <p className="muted">Ainda sem avaliacoes registradas.</p> : null}
+          <h2>Últimas avaliações</h2>
+          {evaluations.length === 0 ? <p className="muted">Ainda sem avaliações registradas.</p> : null}
           <div className="reviews-list">
             {evaluations.slice(0, 40).map((evaluation) => (
               <div key={evaluation.id ?? `${evaluation.created_at}-${evaluation.name}`} className="review-row">
@@ -236,7 +236,7 @@ export default function MarketplaceBusinessReviewsPage() {
                   <small>{formatDateTime(evaluation.created_at)}</small>
                 </div>
                 <StarRating value={toNumber(evaluation.stars)} />
-                <p>{firstText([evaluation.comment, evaluation.comentario]) ?? "Sem comentario."}</p>
+                <p>{firstText([evaluation.comment, evaluation.comentario]) ?? "Sem comentário."}</p>
               </div>
             ))}
           </div>

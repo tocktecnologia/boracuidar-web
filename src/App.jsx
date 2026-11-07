@@ -12,6 +12,12 @@ const MarketplaceMySchedulesPage = lazy(() => import("./pages/MarketplaceMySched
 const MarketplaceScheduleDetailPage = lazy(() => import("./pages/MarketplaceScheduleDetailPage"));
 const MarketplaceConfirmationPage = lazy(() => import("./pages/MarketplaceConfirmationPage"));
 const SignupPage = lazy(() => import("./pages/SignupPage"));
+const InicioPage = lazy(() => import("./pages/InicioPage"));
+const CuidadosPage = lazy(() => import("./pages/CuidadosPage"));
+const AprenderPage = lazy(() => import("./pages/AprenderPage"));
+const ArtigoPage = lazy(() => import("./pages/ArtigoPage"));
+const TrilhaPage = lazy(() => import("./pages/TrilhaPage"));
+const VocePage = lazy(() => import("./pages/VocePage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 function RouteFallback() {
@@ -24,7 +30,12 @@ export default function App() {
       <>
         <PostHogPageTracker />
         <Routes>
-          <Route path="/" element={<Navigate to="/marketplace" replace />} />
+          <Route path="/" element={<InicioPage />} />
+          <Route path="/cuidados" element={<CuidadosPage />} />
+          <Route path="/aprender" element={<AprenderPage />} />
+          <Route path="/aprender/artigo/:slug" element={<ArtigoPage />} />
+          <Route path="/aprender/trilha/:slug" element={<TrilhaPage />} />
+          <Route path="/voce" element={<VocePage />} />
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/marketplace/business" element={<MarketplaceBusinessPage />} />
           <Route path="/marketplace/business/services" element={<MarketplaceBusinessServicesPage />} />
@@ -33,6 +44,7 @@ export default function App() {
           <Route path="/marketplace/meus-agendamentos" element={<MarketplaceMySchedulesPage />} />
           <Route path="/marketplace/meus-agendamentos/:agendamentoId" element={<MarketplaceScheduleDetailPage />} />
           <Route path="/marketplace/confirmation" element={<MarketplaceConfirmationPage />} />
+          <Route path="/minha-rotina" element={<Navigate to="/" replace />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/:businessAlias" element={<BusinessAliasPage />} />
           <Route path="*" element={<NotFoundPage />} />

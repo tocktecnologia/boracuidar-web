@@ -111,7 +111,7 @@ export default function MarketplaceBusinessServicesPage() {
         if (!mounted) return;
 
         if (businessRows.length === 0) {
-          throw new Error("Estabelecimento nao encontrado.");
+          throw new Error("Estabelecimento não encontrado.");
         }
 
         setBusiness(businessRows[0]);
@@ -152,7 +152,7 @@ export default function MarketplaceBusinessServicesPage() {
   }, [query, services]);
 
   const businessName = firstText([business?.nome, page?.title]) ?? "Estabelecimento";
-  const address = firstText([page?.address, business?.endereco, business?.cidade]) ?? "Endereco em atualizacao";
+  const address = firstText([page?.address, business?.endereco, business?.cidade]) ?? "Endereço em atualização";
   const whatsappBotPhone = firstText([business?.whatsapp_bot, business?.whatsapp, business?.telefone, page?.contact, page?.phone]);
   const whatsappBotDigits = digitsOnly(whatsappBotPhone);
   const mySchedulesWhatsappLink = whatsappBotDigits
@@ -174,7 +174,7 @@ export default function MarketplaceBusinessServicesPage() {
   if (loading) {
     return (
       <MarketplaceLayout hideTopbar fullWidth>
-        <p className="section-message">Carregando servicos...</p>
+        <p className="section-message">Carregando serviços...</p>
       </MarketplaceLayout>
     );
   }
@@ -183,7 +183,7 @@ export default function MarketplaceBusinessServicesPage() {
     return (
       <MarketplaceLayout hideTopbar fullWidth>
         <div className="section-message">
-          <p className="error-text">{error || "Nao foi possivel carregar os servicos."}</p>
+          <p className="error-text">{error || "Não foi possível carregar os serviços."}</p>
           <Link className="ghost-btn" to="/marketplace">
             Voltar ao marketplace
           </Link>
@@ -215,7 +215,7 @@ export default function MarketplaceBusinessServicesPage() {
           <Link
             className="business-logo-shortcut"
             to={`/marketplace/business?businessId=${encodeURIComponent(businessId)}`}
-            aria-label={`Abrir pagina de ${businessName}`}
+            aria-label={`Abrir página de ${businessName}`}
           >
             <img src={logoForBusiness(page, business)} alt={businessName} />
           </Link>
@@ -223,19 +223,19 @@ export default function MarketplaceBusinessServicesPage() {
 
         <section className="business-services-shortcut-list">
           <div className="business-services-shortcut-tools">
-            <h2>Servicos disponiveis</h2>
+            <h2>Serviços disponíveis</h2>
             <label className="business-service-search">
               <Search size={14} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar servico" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar serviço" />
             </label>
           </div>
 
-          {filteredServices.length === 0 ? <p className="muted">Nenhum servico encontrado.</p> : null}
+          {filteredServices.length === 0 ? <p className="muted">Nenhum serviço encontrado.</p> : null}
 
           {filteredServices.map((service) => (
             <article className="business-service-row shortcut" key={service.id}>
               <div>
-                <strong>{service.nome ?? "Servico"}</strong>
+                <strong>{service.nome ?? "Serviço"}</strong>
                 <p>{service.descricao ?? "Atendimento especializado"}</p>
               </div>
               <div className="business-service-row-actions">

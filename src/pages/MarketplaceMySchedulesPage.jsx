@@ -32,10 +32,10 @@ function useRouteQueryState() {
 
 function statusColor(status) {
   const normalized = String(status ?? "").trim().toLowerCase();
-  if (normalized === "cancelado" || normalized === "cancelled" || normalized === "canceled") return "#ef4444";
-  if (normalized === "finalizado" || normalized === "completed") return "#64748b";
-  if (["confirmado", "agendado", "confirmed", "scheduled"].includes(normalized)) return "#0e9c97";
-  return "#475467";
+  if (normalized === "cancelado" || normalized === "cancelled" || normalized === "canceled") return "#B42318";
+  if (normalized === "finalizado" || normalized === "completed") return "#61726A";
+  if (["confirmado", "agendado", "confirmed", "scheduled"].includes(normalized)) return "#3B8C60";
+  return "#61726A";
 }
 
 function canCancel(status) {
@@ -199,7 +199,7 @@ export default function MarketplaceMySchedulesPage() {
         limit: hasBusinessScope ? 300 : 500,
       });
 
-      setLoadingLabel("Validando horarios e removendo agendamentos passados...");
+      setLoadingLabel("Validando horários e removendo agendamentos passados...");
       const scheduleRows = scheduleRowsRaw.filter((row) => {
         const startAt = scheduleStartAt(row);
         return startAt && startAt.getTime() > now.getTime();
@@ -221,7 +221,7 @@ export default function MarketplaceMySchedulesPage() {
       let workerRows = [];
       let businessRows = [];
 
-      setLoadingLabel("Carregando detalhes dos servicos e profissionais...");
+      setLoadingLabel("Carregando detalhes dos serviços e profissionais...");
       if (hasBusinessScope) {
         const serviceIds = Array.from(
           new Set(
@@ -285,7 +285,7 @@ export default function MarketplaceMySchedulesPage() {
         const id = toInt(row.id);
         const scopeId = String(row.business_id ?? "").trim();
         if (id != null && scopeId) {
-          serviceMap[scopedKey(scopeId, id)] = row.nome || "Servico";
+          serviceMap[scopedKey(scopeId, id)] = row.nome || "Serviço";
         }
       });
 
@@ -319,7 +319,7 @@ export default function MarketplaceMySchedulesPage() {
 
   function requestSearch() {
     if (phoneDigits.length < 10) {
-      setError("Informe um numero valido.");
+      setError("Informe um número válido.");
       return;
     }
 
@@ -334,7 +334,7 @@ export default function MarketplaceMySchedulesPage() {
   async function cancelSchedule(schedule) {
     const scheduleId = toInt(schedule.id);
     if (!scheduleId) {
-      setError("Agendamento invalido.");
+      setError("Agendamento inválido.");
       return;
     }
 
@@ -390,7 +390,7 @@ export default function MarketplaceMySchedulesPage() {
   }
 
   return (
-    <MarketplaceLayout hideTopbar>
+    <MarketplaceLayout>
       <section className="schedules-page">
         <article className="surface-block schedules-search-block">
           <div className="schedules-search-head">
@@ -421,7 +421,7 @@ export default function MarketplaceMySchedulesPage() {
 
           {loading ? <p className="muted">Etapa atual: {loadingLabel || "Preparando busca..."}</p> : null}
           {error ? <p className="error-text"><AlertTriangle size={14} /> {error}</p> : null}
-          {searchedPhone && schedules.length === 0 && !loading ? <p className="muted">Nenhum agendamento encontrado para este numero.</p> : null}
+          {searchedPhone && schedules.length === 0 && !loading ? <p className="muted">Nenhum agendamento encontrado para este número.</p> : null}
         </article>
 
         {schedules.map((schedule) => {
@@ -430,7 +430,7 @@ export default function MarketplaceMySchedulesPage() {
           const scheduleId = toInt(schedule.id);
           const serviceId = toInt(schedule.servico_id);
           const workerId = toInt(schedule.trabalhador_id);
-          const serviceName = serviceNameById[scopedKey(scheduleBusinessId, serviceId)] || "Servico";
+          const serviceName = serviceNameById[scopedKey(scheduleBusinessId, serviceId)] || "Serviço";
           const workerName = firstText([schedule.trabalhador_nome, workerNameById[scopedKey(scheduleBusinessId, workerId)]]) || "Profissional";
           const color = statusColor(schedule.status);
 
@@ -443,7 +443,7 @@ export default function MarketplaceMySchedulesPage() {
               {!hasBusinessScope ? <p>Estabelecimento: {businessName}</p> : null}
               <p>Profissional: {workerName}</p>
               <p>Data: {formatDate(schedule.data_agendamento)}</p>
-              <p>Horario: {schedule.hora_inicio || "--:--"} - {schedule.hora_fim || "--:--"}</p>
+              <p>Horário: {schedule.hora_inicio || "--:--"} - {schedule.hora_fim || "--:--"}</p>
 
               <button
                 className="danger-btn"

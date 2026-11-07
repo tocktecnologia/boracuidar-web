@@ -20,7 +20,7 @@ async function readApiResponse(response, fallbackMessage) {
 export async function loadBookingBootstrap(businessId) {
   const baseUrl = bookingApiBaseUrl();
   if (!baseUrl) {
-    throw new Error("VITE_BOOKING_API_URL nao configurada.");
+    throw new Error("VITE_BOOKING_API_URL não configurada.");
   }
 
   const url = new URL(`${baseUrl}/api/bookings/bootstrap`);
@@ -40,7 +40,7 @@ export async function loadBookingAvailability({
 }) {
   const baseUrl = bookingApiBaseUrl();
   if (!baseUrl) {
-    throw new Error("VITE_BOOKING_API_URL nao configurada.");
+    throw new Error("VITE_BOOKING_API_URL não configurada.");
   }
 
   const url = new URL(`${baseUrl}/api/bookings/availability`);
@@ -58,7 +58,7 @@ export async function loadBookingAvailability({
 export async function createBookingViaApi(payload) {
   const baseUrl = bookingApiBaseUrl();
   if (!baseUrl) {
-    throw new Error("VITE_BOOKING_API_URL nao configurada.");
+    throw new Error("VITE_BOOKING_API_URL não configurada.");
   }
 
   const response = await fetch(`${baseUrl}/api/bookings/create`, {

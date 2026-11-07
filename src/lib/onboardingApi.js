@@ -8,7 +8,7 @@ function apiUrl() {
 
 export async function finalizeOnboarding(payload) {
   const token = await auth.currentUser?.getIdToken();
-  if (!token) throw new Error("Nao foi possivel autenticar o email confirmado.");
+  if (!token) throw new Error("Não foi possível autenticar o email confirmado.");
 
   const response = await fetch(`${apiUrl()}/api/boracuidar/onboarding/finalize`, {
     method: "POST",
@@ -17,7 +17,7 @@ export async function finalizeOnboarding(payload) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body.ok !== true) {
-    throw new Error(body.message || "Nao foi possivel concluir o cadastro.");
+    throw new Error(body.message || "Não foi possível concluir o cadastro.");
   }
   return body.data;
 }

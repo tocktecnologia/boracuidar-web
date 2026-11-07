@@ -4,6 +4,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
   CalendarClock,
   CheckCircle2,
+  ChevronLeft,
   Clock3,
   ExternalLink,
   MapPin,
@@ -11,7 +12,6 @@ import {
   Phone,
   Search,
   Star,
-  UserRound,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
@@ -92,6 +92,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [serviceQuery, setServiceQuery] = useState("");
   const servicesSectionRef = useRef(null);
+  const reviewsSectionRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -114,7 +115,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
         }), { businessId });
 
         if (businessRows.length === 0) {
-          throw new Error("Estabelecimento nao encontrado.");
+          throw new Error("Estabelecimento não encontrado.");
         }
 
         const currentBusiness = businessRows[0];
@@ -133,7 +134,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
 
         const allowPage = toBool(currentPage?.allow_page) || toBool(currentBusiness.allow_page);
         if (!allowPage) {
-          throw new Error("Esta pagina ainda esta em processo de aprovacao no marketplace.");
+          throw new Error("Esta página ainda está em processo de aprovação no marketplace.");
         }
 
         const [serviceRows, workerRows, evaluationRows] = await measureAsync("business_page_load_related", () => Promise.all([
@@ -246,7 +247,7 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
 
   if (loading) {
     return (
-      <MarketplaceLayout hideTopbar fullWidth>
+      <MarketplaceLayout fullWidth showFooter hideTabBar>
         <p className="section-message">Carregando estabelecimento...</p>
       </MarketplaceLayout>
     );
@@ -254,9 +255,9 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
 
   if (error || !business) {
     return (
-      <MarketplaceLayout hideTopbar fullWidth>
+      <MarketplaceLayout fullWidth showFooter hideTabBar>
         <div className="section-message">
-          <p className="error-text">{error || "Nao foi possivel carregar este estabelecimento."}</p>
+          <p className="error-text">{error || "Não foi possível carregar este estabelecimento."}</p>
           <Link className="ghost-btn" to="/marketplace">
             Voltar ao marketplace
           </Link>
@@ -272,21 +273,29 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
 
   const contactPhone = firstText([page?.contact, page?.phone, business.whatsapp, business.telefone]);
   const whatsappLink = whatsappHref(contactPhone);
-  const address = firstText([page?.address, business.endereco, page?.city, business.cidade]) ?? "Endereco em atualizacao";
+  const address = firstText([page?.address, business.endereco, page?.city, business.cidade]) ?? "Endereço em atualização";
   const cityLabel = firstText([business.cidade, page?.city]);
   const mapQuery = encodeURIComponent(`${businessName} ${address}`);
   const mapEmbedSrc = `https://maps.google.com/maps?q=${mapQuery}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-  const hoursLabel = formatBusinessHours(page, business) ?? "Consulte os horarios disponiveis no agendamento.";
+  const hoursLabel = formatBusinessHours(page, business) ?? "Consulte os horários disponíveis no agendamento.";
   const amenities = Array.isArray(page?.amenities)
     ? page.amenities.map((item) => String(item ?? "").trim()).filter(Boolean).slice(0, 6)
     : [];
   const selectedPhotoIndex = activePhotoIndex < gallery.length ? activePhotoIndex : 0;
   const activePhoto = gallery[selectedPhotoIndex] ?? cover;
 
+  const prices = services.map((service) => toNumber(service.preco)).filter((value) => value > 0);
+  const startingPrice = prices.length > 0 ? Math.min(...prices) : 0;
+  const ratingLabel = reviewSummary.count > 0 ? reviewSummary.average.toFixed(1).replace(".", ",") : null;
+
   return (
-    <MarketplaceLayout hideTopbar fullWidth>
+    <MarketplaceLayout fullWidth showFooter hideTabBar>
       <section className="business-profile-wrap">
-        <motion.header className="business-profile-head" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
+        <Link className="market-back-link" to="/marketplace">
+          <ChevronLeft size={16} /> Explorar
+        </Link>
+
+        <motion.header className="business-profile-head" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
           <div className="business-profile-brand">
             <img
               src={firstText([page?.logo_url, business.logo_url]) || "/assets/brand/icon-mark.png"}
@@ -295,174 +304,197 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
             />
             <div>
               <h1>{businessName}</h1>
-              <p className="business-address-line">
-                <MapPin size={14} />
-                {address}
-              </p>
               <div className="business-profile-meta">
-                <span>
-                  <Star size={14} />
-                  {reviewSummary.count > 0
-                    ? `${reviewSummary.average.toFixed(1)} (${reviewSummary.count} avaliacoes)`
-                    : "Sem avaliacoes"}
-                </span>
-                <span>
-                  <CheckCircle2 size={14} />
-                  Bora Cuidar
-                </span>
+                {ratingLabel ? (
+                  <span className="business-meta-rating">
+                    <Star size={14} />
+                    <strong>{ratingLabel}</strong>
+                    <button type="button" onClick={() => reviewsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                      {reviewSummary.count} {reviewSummary.count === 1 ? "avaliação" : "avaliações"}
+                    </button>
+                  </span>
+                ) : (
+                  <span>Novo no BoraCuidar</span>
+                )}
                 {cityLabel ? <span>{cityLabel}</span> : null}
+                <span className="business-meta-verified">
+                  <CheckCircle2 size={14} /> Agendamento online
+                </span>
               </div>
             </div>
           </div>
 
           <div className="business-profile-head-actions">
-            <Link className="market-back-link" to="/marketplace">
-              Voltar ao marketplace
-            </Link>
-            <button className="cta-btn business-book-now-btn" type="button" onClick={scrollToServices}>
-              <CalendarClock size={16} /> Agendar agora
-            </button>
             <button className="ghost-btn" onClick={() => setSchedulesDialogOpen(true)} type="button">
               Meus agendamentos
+            </button>
+            <button className="cta-btn business-book-now-btn" type="button" onClick={scrollToServices}>
+              <CalendarClock size={16} /> Agendar
             </button>
           </div>
         </motion.header>
 
-        <div className="business-profile-grid">
-          <main className="business-main-column">
-            <motion.section className="business-gallery-stage" initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }}>
-              <img src={activePhoto} alt={businessName} className="business-stage-photo" />
-              <div className="business-stage-overlay" />
-              <div className="business-stage-caption">
-                <h2>{description}</h2>
-                <button className="cta-btn" type="button" onClick={scrollToServices}>
-                  <CalendarClock size={15} /> Agendar
-                </button>
-              </div>
-            </motion.section>
-
-            <motion.div
-              className="business-gallery-thumbs"
-              initial="hidden"
-              animate="show"
-              variants={{
-                hidden: { opacity: 0, y: 12 },
-                show: { opacity: 1, y: 0, transition: { staggerChildren: 0.04 } },
-              }}
-            >
-              {gallery.map((imageUrl, index) => (
-                <motion.button
+        <section className={gallery.length > 1 ? "business-gallery-stage has-thumbs" : "business-gallery-stage"}>
+          <div className="business-stage-main">
+            <img src={activePhoto} alt={businessName} className="business-stage-photo" />
+            {gallery.length > 1 ? (
+              <span className="business-stage-count">{selectedPhotoIndex + 1} / {gallery.length}</span>
+            ) : null}
+          </div>
+          {gallery.length > 1 ? (
+            <div className="business-gallery-thumbs">
+              {gallery.slice(0, 6).map((imageUrl, index) => (
+                <button
                   key={`${imageUrl}-${index}`}
                   type="button"
                   className={index === selectedPhotoIndex ? "business-thumb active" : "business-thumb"}
                   onClick={() => setActivePhotoIndex(index)}
-                  variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }}
+                  aria-label={`Ver foto ${index + 1}`}
                 >
-                  <img src={imageUrl} alt={`${businessName} ${index + 1}`} />
-                </motion.button>
+                  <img src={imageUrl} alt="" loading="lazy" />
+                </button>
               ))}
-            </motion.div>
+            </div>
+          ) : null}
+        </section>
+
+        <div className="business-profile-grid">
+          <div className="business-main-column">
+            <section className="business-about">
+              <h2>Sobre</h2>
+              <p>{description}</p>
+            </section>
 
             <section ref={servicesSectionRef} className="business-services-panel">
               <div className="business-services-head">
-                <h2>Servicos</h2>
+                <h2>Serviços</h2>
                 <label className="business-service-search">
-                  <Search size={14} />
+                  <Search size={15} />
                   <input
                     value={serviceQuery}
                     onChange={(event) => setServiceQuery(event.target.value)}
-                    placeholder="Buscar servico"
+                    placeholder="Buscar serviço"
+                    aria-label="Buscar serviço"
                   />
                 </label>
               </div>
 
-              {filteredServices.length === 0 ? <p className="muted">Nenhum servico encontrado.</p> : null}
+              {filteredServices.length === 0 ? <p className="muted">Nenhum serviço encontrado.</p> : null}
 
-              {filteredServices.map((service) => (
-                <article className="business-service-row" key={service.id}>
-                  <div>
-                    <strong>{service.nome ?? "Servico"}</strong>
-                    <p>{service.descricao ?? "Atendimento especializado"}</p>
-                  </div>
-                  <div className="business-service-row-actions">
-                    <span>{formatMoney(service.preco || 0)}</span>
-                    <small>{toInt(service.duracao_minutos) ?? 30} min</small>
-                    <button className="cta-btn" onClick={() => openBooking(service.id)}>
-                      Agendar
-                    </button>
-                  </div>
-                </article>
-              ))}
+              <div className="business-service-list">
+                {filteredServices.map((service) => (
+                  <article className="business-service-row" key={service.id}>
+                    <div>
+                      <strong>{service.nome ?? "Serviço"}</strong>
+                      {service.descricao ? <p>{service.descricao}</p> : null}
+                      <small>{toInt(service.duracao_minutos) ?? 30} min</small>
+                    </div>
+                    <div className="business-service-row-actions">
+                      <span>{formatMoney(service.preco || 0)}</span>
+                      <button className="cta-btn" type="button" onClick={() => openBooking(service.id)}>
+                        Agendar
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
             </section>
 
-            <section className="business-reviews-panel">
+            <section className="business-reviews-panel" ref={reviewsSectionRef}>
               <div className="section-head-inline">
-                <h2>Avaliacoes recentes</h2>
+                <h2>
+                  Avaliações
+                  {ratingLabel ? (
+                    <span className="business-reviews-score"><Star size={16} /> {ratingLabel} · {reviewSummary.count}</span>
+                  ) : null}
+                </h2>
                 <Link className="ghost-btn" to={`/marketplace/business/reviews?businessId=${encodeURIComponent(businessId)}`}>
                   Ver todas
                 </Link>
               </div>
-              {evaluations.length === 0 ? <p className="muted">Nenhuma avaliacao publica no momento.</p> : null}
-              {evaluations.slice(0, 6).map((evaluation) => (
-                <div className="review-row" key={evaluation.id ?? `${evaluation.created_at}-${evaluation.name}`}>
-                  <div>
-                    <strong>{firstText([evaluation.name, evaluation.email]) ?? "Cliente"}</strong>
-                    <small>{formatDateTime(evaluation.created_at)}</small>
-                  </div>
-                  <StarRating value={toNumber(evaluation.stars)} />
-                  <p>{firstText([evaluation.comment, evaluation.comentario]) ?? "Sem comentario."}</p>
-                </div>
-              ))}
+              {evaluations.length === 0 ? <p className="muted">Nenhuma avaliação pública no momento.</p> : null}
+              <div className="reviews-list">
+                {evaluations.slice(0, 6).map((evaluation) => {
+                  const author = firstText([evaluation.name, evaluation.email]) ?? "Cliente";
+                  return (
+                    <div className="review-row" key={evaluation.id ?? `${evaluation.created_at}-${evaluation.name}`}>
+                      <div>
+                        <span className="review-avatar" aria-hidden="true">{author.slice(0, 1).toUpperCase()}</span>
+                        <strong>{author}</strong>
+                        <small>{formatDateTime(evaluation.created_at)}</small>
+                      </div>
+                      <StarRating value={toNumber(evaluation.stars)} size={14} />
+                      <p>{firstText([evaluation.comment, evaluation.comentario]) ?? "Sem comentário."}</p>
+                    </div>
+                  );
+                })}
+              </div>
             </section>
-          </main>
+          </div>
 
-          <motion.aside className="business-side-column" initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }}>
+          <aside className="business-side-column">
+            <article className="business-book-card">
+              <p className="business-book-card-label">Agendamento online</p>
+              <strong>{startingPrice > 0 ? `A partir de ${formatMoney(startingPrice)}` : "Consulte valores"}</strong>
+              <p className="business-hours-line">
+                <Clock3 size={14} />
+                {hoursLabel}
+              </p>
+              <button className="cta-btn" type="button" onClick={scrollToServices}>
+                Ver horários disponíveis
+              </button>
+              {whatsappLink ? (
+                <a className="ghost-btn" href={whatsappLink} target="_blank" rel="noreferrer">
+                  <MessageCircle size={15} /> Falar no WhatsApp
+                </a>
+              ) : null}
+            </article>
+
             <article className="business-side-panel">
               <div className="business-map-wrap">
                 <iframe title={`Mapa ${businessName}`} src={mapEmbedSrc} loading="lazy" />
               </div>
 
               <div className="business-side-block">
-                <h3>Sobre</h3>
-                <p>{description}</p>
-              </div>
-
-              <div className="business-side-block">
-                <h3>Equipe</h3>
-                {workers.length === 0 ? <p className="muted">Equipe em atualizacao.</p> : null}
-                <div className="business-side-workers">
-                  {workers.slice(0, 8).map((worker) => (
-                    <div key={worker.id ?? worker.nome} className="business-side-worker">
-                      {workerPhoto(worker) ? <img src={workerPhoto(worker)} alt={worker.nome ?? "Profissional"} /> : <UserRound size={16} />}
-                      <span>{worker.nome ?? "Profissional"}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="business-side-block">
-                <h3>Horarios</h3>
-                <p className="business-hours-line">
-                  <Clock3 size={14} />
-                  {hoursLabel}
+                <h3>Endereço</h3>
+                <p className="business-address-line">
+                  <MapPin size={14} />
+                  {address}
                 </p>
               </div>
 
               <div className="business-side-block">
                 <h3>Contato</h3>
-                <p>{contactPhone || "Contato em atualizacao"}</p>
-                <p>{address}</p>
-                <div className="contact-actions">
-                  {whatsappLink ? (
-                    <a className="ghost-btn" href={whatsappLink} target="_blank" rel="noreferrer">
-                      <MessageCircle size={15} /> WhatsApp <ExternalLink size={14} />
+                {contactPhone ? (
+                  <div className="contact-actions">
+                    <a href={`tel:${contactPhone}`}>
+                      <Phone size={14} /> {contactPhone}
                     </a>
-                  ) : null}
-                  {contactPhone ? (
-                    <a className="ghost-btn" href={`tel:${contactPhone}`}>
-                      <Phone size={15} /> {contactPhone}
-                    </a>
-                  ) : null}
+                    {whatsappLink ? (
+                      <a href={whatsappLink} target="_blank" rel="noreferrer">
+                        <MessageCircle size={14} /> WhatsApp <ExternalLink size={12} />
+                      </a>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="muted">Contato em atualização</p>
+                )}
+              </div>
+
+              <div className="business-side-block">
+                <h3>Equipe</h3>
+                {workers.length === 0 ? <p className="muted">Equipe em atualização.</p> : null}
+                <div className="business-side-workers">
+                  {workers.slice(0, 8).map((worker) => (
+                    <div key={worker.id ?? worker.nome} className="business-side-worker">
+                      {workerPhoto(worker) ? (
+                        <img src={workerPhoto(worker)} alt="" />
+                      ) : (
+                        <span className="worker-initial" aria-hidden="true">{String(worker.nome ?? "P").slice(0, 1).toUpperCase()}</span>
+                      )}
+                      <span>{worker.nome ?? "Profissional"}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -475,9 +507,19 @@ export default function MarketplaceBusinessPage({ businessId: providedBusinessId
                 </div>
               ) : null}
             </article>
-          </motion.aside>
+          </aside>
         </div>
       </section>
+
+      <div className="business-mobile-cta">
+        <div>
+          <strong>{startingPrice > 0 ? `A partir de ${formatMoney(startingPrice)}` : businessName}</strong>
+          {ratingLabel ? <span><Star size={12} /> {ratingLabel} · {reviewSummary.count} avaliações</span> : null}
+        </div>
+        <button className="cta-btn" type="button" onClick={scrollToServices}>
+          Agendar
+        </button>
+      </div>
 
       <BookingDialog
         isOpen={bookingOpen}

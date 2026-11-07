@@ -24,7 +24,7 @@ export default function MarketplaceConfirmationPage() {
   }
 
   return (
-    <MarketplaceLayout hideTopbar>
+    <MarketplaceLayout>
       <section className="confirmation-page">
         <BookingConfirmationCard agendamentoId={agendamentoId} onBack={goBack} initialPayload={confirmationPayload} />
         <Link className="ghost-btn" to="/marketplace">Explorar marketplace</Link>

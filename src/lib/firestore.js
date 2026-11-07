@@ -560,7 +560,7 @@ function lockIdsForScheduleRow(row) {
 }
 
 function buildSlotTakenError() {
-  const error = new Error("Este horario acabou de ser preenchido por outra pessoa. Escolha outro horario.");
+  const error = new Error("Este horário acabou de ser preenchido por outra pessoa. Escolha outro horário.");
   error.code = BOOKING_SLOT_TAKEN_CODE;
   return error;
 }
@@ -569,7 +569,7 @@ export function isBookingSlotTakenError(error) {
   return String(error?.code ?? "").trim() === BOOKING_SLOT_TAKEN_CODE;
 }
 
-function buildSlotUnavailableError(message = "Esse horario nao cabe na disponibilidade atual do profissional.") {
+function buildSlotUnavailableError(message = "Esse horário não cabe na disponibilidade atual do profissional.") {
   const error = new Error(message);
   error.code = BOOKING_SLOT_UNAVAILABLE_CODE;
   return error;
@@ -694,7 +694,7 @@ function normalizeScheduleInputs(schedules) {
       const startMinute = parseClockToMinute(item.startTime);
       const endMinute = parseClockToMinute(item.endTime);
       if (startMinute == null || endMinute == null || endMinute <= startMinute) {
-        throw new Error("Horario de servico invalido.");
+        throw new Error("Horário de serviço inválido.");
       }
 
       return { ...item, startMinute, endMinute };
@@ -702,14 +702,14 @@ function normalizeScheduleInputs(schedules) {
     .sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute);
 
   if (normalized.length === 0) {
-    throw new Error("Nenhum servico valido para agendamento.");
+    throw new Error("Nenhum serviço válido para agendamento.");
   }
 
   for (let index = 1; index < normalized.length; index += 1) {
     const prev = normalized[index - 1];
     const current = normalized[index];
     if (overlapsMinuteRanges(prev.startMinute, prev.endMinute, current.startMinute, current.endMinute)) {
-      throw buildSlotUnavailableError("Os servicos selecionados se sobrepoem. Revise os horarios.");
+      throw buildSlotUnavailableError("Os serviços selecionados se sobrepõem. Revise os horários.");
     }
   }
 
@@ -735,7 +735,7 @@ export async function createSchedulesAtomically({
   if (!normalizedBusinessId) throw new Error("businessId ausente.");
   if (!normalizedDateKey) throw new Error("Data de agendamento invalida.");
   if (!Number.isFinite(normalizedWorkerId) || normalizedWorkerId <= 0) {
-    throw new Error("Profissional invalido.");
+    throw new Error("Profissional inválido.");
   }
   if (!cleanCustomerName) throw new Error("Nome do cliente e obrigatorio.");
   if (!cleanCustomerPhone) throw new Error("Telefone do cliente e obrigatorio.");
@@ -747,12 +747,12 @@ export async function createSchedulesAtomically({
     dateKey: normalizedDateKey,
   });
   if (!availability) {
-    throw buildSlotUnavailableError("O profissional nao possui disponibilidade para esse dia.");
+    throw buildSlotUnavailableError("O profissional não possui disponibilidade para esse dia.");
   }
 
   for (const schedule of normalizedSchedules) {
     if (schedule.startMinute < availability.workStart || schedule.endMinute > availability.workEnd) {
-      throw buildSlotUnavailableError("Esse servico nao cabe no horario de atendimento do profissional.");
+      throw buildSlotUnavailableError("Esse serviço não cabe no horário de atendimento do profissional.");
     }
 
     if (
@@ -760,7 +760,7 @@ export async function createSchedulesAtomically({
       availability.breakEnd != null &&
       overlapsMinuteRanges(schedule.startMinute, schedule.endMinute, availability.breakStart, availability.breakEnd)
     ) {
-      throw buildSlotUnavailableError("Esse servico invade o intervalo do profissional. Escolha outro horario.");
+      throw buildSlotUnavailableError("Esse serviço invade o intervalo do profissional. Escolha outro horário.");
     }
 
     if (availability.blocked.some((blocked) => overlapsMinuteRanges(schedule.startMinute, schedule.endMinute, blocked.start, blocked.end))) {
@@ -791,7 +791,7 @@ export async function createSchedulesAtomically({
       endTime: schedule.hora_fim,
     });
     if (lockIds.length === 0) {
-      throw new Error("Horario invalido para bloqueio.");
+      throw new Error("Horário inválido para bloqueio.");
     }
     schedule.lock_ids = lockIds;
     for (const lockId of lockIds) {
@@ -988,7 +988,7 @@ export async function createEvaluation({ businessId, workerId, stars, comment = 
   });
 
   if (workers.length === 0) {
-    throw new Error("Profissional nao encontrado para este estabelecimento.");
+    throw new Error("Profissional não encontrado para este estabelecimento.");
   }
 
   const evaluation = await insertRow({

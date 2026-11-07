@@ -36,10 +36,10 @@ export default function PhoneVerificationDialog({ isOpen, phoneDigits, onCancel,
       if (response.ok) {
         setCodeSent(true);
       } else {
-        setError(`Falha ao enviar codigo (status ${response.status}).`);
+        setError(`Falha ao enviar código (status ${response.status}).`);
       }
     } catch {
-      setError("Falha ao enviar codigo de verificacao para o WhatsApp.");
+      setError("Falha ao enviar código de verificação para o WhatsApp.");
     } finally {
       setLoading(false);
     }
@@ -47,7 +47,7 @@ export default function PhoneVerificationDialog({ isOpen, phoneDigits, onCancel,
 
   function verifyCode() {
     if (inputCode.trim().length < 6) {
-      setError("Digite o codigo de 6 digitos recebido.");
+      setError("Digite o código de 6 dígitos recebido.");
       return;
     }
 
@@ -63,9 +63,9 @@ export default function PhoneVerificationDialog({ isOpen, phoneDigits, onCancel,
     <Modal isOpen={isOpen} onClose={onCancel} maxWidth={520}>
       <div className="verify-dialog">
         <h3>Confirmar WhatsApp</h3>
-        <p>Enviamos um codigo para +{phoneDigits}. Digite abaixo para continuar.</p>
+        <p>Enviamos um código para +{phoneDigits}. Digite abaixo para continuar.</p>
 
-        {loading ? <p><Loader2 size={16} className="spin" /> Enviando codigo...</p> : null}
+        {loading ? <p><Loader2 size={16} className="spin" /> Enviando código...</p> : null}
 
         <input
           value={inputCode}

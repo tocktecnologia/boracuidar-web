@@ -646,7 +646,7 @@ export default function BookingDialog({
         const rawBusiness = bootstrap?.business ?? {};
 
         if (rawServices.length === 0 || rawWorkers.length === 0) {
-          setError("Nao ha servicos ou profissionais disponiveis neste estabelecimento.");
+          setError("Não há serviços ou profissionais disponíveis neste estabelecimento.");
           setLoading(false);
           return;
         }
@@ -678,7 +678,7 @@ export default function BookingDialog({
         const initialWorkerId = workersForService[0]?.id ?? null;
 
         if (!initialWorkerId) {
-          setError("Nenhum profissional atende esse servico.");
+          setError("Nenhum profissional atende esse serviço.");
           setSelectedWorkerId(rawWorkers[0]?.id ?? null);
           setSelectedDate(nowToday);
           setSelectedStart(null);
@@ -851,7 +851,7 @@ export default function BookingDialog({
     const supported = supportedServiceSet(workerId);
     const canSupport = selectedServiceIds.every((serviceId) => supported.has(serviceId));
     if (!canSupport) {
-      setError("Esse profissional nao atende os servicos selecionados.");
+      setError("Esse profissional não atende os serviços selecionados.");
       return;
     }
 
@@ -881,7 +881,7 @@ export default function BookingDialog({
     if (saving) return;
     setSlotConflict(false);
     if (!selectedWorkerId || !selectedDate || !selectedStart) {
-      setError("Selecione profissional, data e horario antes de adicionar.");
+      setError("Selecione profissional, data e horário antes de adicionar.");
       return;
     }
 
@@ -889,7 +889,7 @@ export default function BookingDialog({
     const candidates = services.filter((service) => !selectedServiceIds.includes(service.id) && supported.has(service.id));
 
     if (candidates.length === 0) {
-      setError("Nao ha outro servico compativel para esse profissional.");
+      setError("Não há outro serviço compatível para esse profissional.");
       return;
     }
 
@@ -901,7 +901,7 @@ export default function BookingDialog({
     }
 
     if (fitOptions.length === 0) {
-      setError("Esse servico nao cabe na agenda do profissional. Escolha outro horario ou servico.");
+      setError("Esse serviço não cabe na agenda do profissional. Escolha outro horário ou serviço.");
       return;
     }
 
@@ -915,7 +915,7 @@ export default function BookingDialog({
     const nextIds = [...selectedServiceIds, serviceId];
     const stillFits = await fitsCurrentSelection(nextIds);
     if (!stillFits) {
-      setError("Esse servico nao cabe na agenda do profissional. Escolha outro horario ou servico.");
+      setError("Esse serviço não cabe na agenda do profissional. Escolha outro horário ou serviço.");
       setAddServiceOpen(false);
       return;
     }
@@ -1029,7 +1029,7 @@ export default function BookingDialog({
     try {
       const currentStart = selectedStart ? new Date(selectedStart) : null;
       if (!currentStart || !selectedWorkerId || !selectedDate) {
-        setError("Horario indisponivel. Escolha novamente antes de confirmar.");
+        setError("Horário indisponível. Escolha novamente antes de confirmar.");
         return;
       }
 
@@ -1046,7 +1046,7 @@ export default function BookingDialog({
           serviceIds: selectedServiceIds,
           keepSelected: false,
         });
-        setError("Outra pessoa acabou de reservar esse horario. Escolha um novo horario para continuar.");
+        setError("Outra pessoa acabou de reservar esse horário. Escolha um novo horário para continuar.");
         setSlotConflict(true);
         captureEvent("booking_slot_conflict", analyticsProps({ reason: "latest_start_unavailable" }));
         return;
@@ -1073,7 +1073,7 @@ export default function BookingDialog({
       let confirmationPayload = null;
 
       if (!isBookingApiEnabled()) {
-        setError("Agendamento pelo backend indisponivel. Tente novamente em instantes.");
+        setError("Agendamento pelo backend indisponível. Tente novamente em instantes.");
         captureEvent("booking_submit_failed", analyticsProps({ reason: "booking_api_disabled" }));
         return;
       }
@@ -1098,7 +1098,7 @@ export default function BookingDialog({
       confirmationPayload = apiResult?.confirmationPayload ?? null;
 
       if (createdIds.length === 0) {
-        setError("Nao foi possivel criar o agendamento.");
+        setError("Não foi possível criar o agendamento.");
         captureEvent("booking_submit_failed", analyticsProps({ reason: "empty_created_ids" }));
         return;
       }
@@ -1141,8 +1141,8 @@ export default function BookingDialog({
           keepSelected: false,
         });
         const message = isBookingSlotTakenError(submitError)
-          ? "Esse horario acabou de ser preenchido por outra pessoa. Selecione outro horario."
-          : submitError.message || "Esse horario nao cabe mais na disponibilidade atual do profissional.";
+          ? "Esse horário acabou de ser preenchido por outra pessoa. Selecione outro horário."
+          : submitError.message || "Esse horário não cabe mais na disponibilidade atual do profissional.";
         setError(message);
         setSlotConflict(true);
         captureEvent("booking_slot_conflict", analyticsProps({
@@ -1198,7 +1198,7 @@ export default function BookingDialog({
 
   const confirmationDateLabel = selectedDate
     ? new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long" }).format(selectedDate)
-    : "Data indisponivel";
+    : "Data indisponível";
   const confirmationStart = timelineRows[0]?.start ?? selectedStart;
   const confirmationEnd = timelineRows[timelineRows.length - 1]?.end ?? null;
   const confirmationTimeLabel = `de ${confirmationStart ? timeLabel(confirmationStart) : "--:--"} as ${confirmationEnd ? timeLabel(confirmationEnd) : "--:--"}`;
@@ -1217,15 +1217,21 @@ export default function BookingDialog({
                 <span className="booking-head-spacer" />
               )}
             </div>
-            <h3>{monthLabel(selectedDate ?? today)}</h3>
+            <div className="booking-head-title">
+              <h3>Escolha data e horário</h3>
+              {firstText([businessRow?.nome, businessRow?.nome_fantasia]) ? (
+                <p>{firstText([businessRow?.nome, businessRow?.nome_fantasia])}</p>
+              ) : null}
+            </div>
             <div className="booking-head-right">
               <button
                 className="booking-icon-circle"
                 onClick={() => !saving && !askingCustomer && onClose?.("dismiss")}
                 disabled={saving || askingCustomer}
                 type="button"
+                aria-label="Fechar"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
           </header>
@@ -1237,243 +1243,247 @@ export default function BookingDialog({
           ) : (
             <>
               <div className="booking-modern-scroll">
-                <section className="booking-date-carousel">
-                  <button
-                    className="booking-icon-circle"
-                    onClick={() => setDateOffset((current) => Math.max(0, current - WINDOW_DAYS))}
-                    disabled={!canPrevDays}
-                    type="button"
-                  >
-                    <ChevronLeft size={20} />
-                  </button>
-
-                  <div className="booking-date-list" role="list">
-                    {datesWindow.map((date) => {
-                      const key = dateKey(date);
-                      const selected = isSameDay(selectedDate, date);
-                      const count = dateCounts[key] ?? 0;
-                      const indicatorClass = count >= 6 ? "green" : count > 0 ? "yellow" : "none";
-
-                      return (
-                        <button
-                          key={key}
-                          className={selected ? "booking-date-card active" : "booking-date-card"}
-                          onClick={() => handleSelectDate(date)}
-                          type="button"
-                        >
-                          <span className="weekday">{weekDayLabel(date)}</span>
-                          <strong>{date.getDate()}</strong>
-                          <span className={`slots-indicator ${indicatorClass}`} />
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    className="booking-icon-circle"
-                    onClick={() => setDateOffset((current) => Math.min(maxDateOffset, current + WINDOW_DAYS))}
-                    disabled={!canNextDays}
-                    type="button"
-                  >
-                    <ChevronRight size={20} />
-                  </button>
-                </section>
-
-                <section className="booking-period-tabs">
-                  {[
-                    { id: "manha", label: "Manha" },
-                    { id: "tarde", label: "Tarde" },
-                    { id: "noite", label: "Noite" },
-                  ].map((item) => (
+                <div className="booking-main">
+                  <p className="booking-month-label">{monthLabel(selectedDate ?? today)}</p>
+                  <section className="booking-date-carousel">
                     <button
-                      key={item.id}
-                      className={period === item.id ? "period-tab active" : "period-tab"}
-                      onClick={() => {
-                        setPeriod(item.id);
-                        setSlotOffset(0);
-                      }}
+                      className="booking-icon-circle"
+                      onClick={() => setDateOffset((current) => Math.max(0, current - WINDOW_DAYS))}
+                      disabled={!canPrevDays}
                       type="button"
                     >
-                      {item.label}
+                      <ChevronLeft size={20} />
                     </button>
-                  ))}
-                </section>
 
-                <section className="booking-slots-row">
-                  {slotsByPeriod.length === 0 ? (
-                    <div className="booking-empty-slots">Nao ha horarios disponiveis nesse periodo.</div>
-                  ) : (
-                    <>
-                      <button
-                        className="booking-icon-circle"
-                        onClick={() => setSlotOffset((current) => Math.max(0, current - SLOTS_PER_PAGE))}
-                        disabled={!canPrevSlots}
-                        type="button"
-                      >
-                        <ChevronLeft size={20} />
-                      </button>
+                    <div className="booking-date-list" role="list">
+                      {datesWindow.map((date) => {
+                        const key = dateKey(date);
+                        const selected = isSameDay(selectedDate, date);
+                        const count = dateCounts[key] ?? 0;
+                        const indicatorClass = count >= 6 ? "green" : count > 0 ? "yellow" : "none";
 
-                      <div className="booking-slot-list">
-                        {visibleSlots.map((slot) => (
+                        return (
                           <button
-                            key={slot.start.toISOString()}
-                            className={[
-                              "booking-slot-btn",
-                              selectedStart && sameMinute(slot.start, selectedStart) ? "active" : "",
-                              !slot.available ? "occupied" : "",
-                            ].filter(Boolean).join(" ")}
-                            onClick={() => {
-                              if (!slot.available) return;
-                              setSlotConflict(false);
-                              setSelectedStart(slot.start);
-                              captureEvent("booking_slot_selected", analyticsProps({
-                                selected_date: selectedDate ? dateKey(selectedDate) : undefined,
-                                selected_start: timeLabel(slot.start),
-                              }));
-                            }}
-                            disabled={!slot.available}
+                            key={key}
+                            className={selected ? "booking-date-card active" : "booking-date-card"}
+                            onClick={() => handleSelectDate(date)}
                             type="button"
                           >
-                            <span>{timeLabel(slot.start)}</span>
-                            {!slot.available ? <small>Ocupado</small> : null}
+                            <span className="weekday">{weekDayLabel(date)}</span>
+                            <strong>{date.getDate()}</strong>
+                            <span className={`slots-indicator ${indicatorClass}`} />
                           </button>
-                        ))}
-                      </div>
+                        );
+                      })}
+                    </div>
 
+                    <button
+                      className="booking-icon-circle"
+                      onClick={() => setDateOffset((current) => Math.min(maxDateOffset, current + WINDOW_DAYS))}
+                      disabled={!canNextDays}
+                      type="button"
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  </section>
+
+                  <section className="booking-period-tabs">
+                    {[
+                      { id: "manha", label: "Manhã" },
+                      { id: "tarde", label: "Tarde" },
+                      { id: "noite", label: "Noite" },
+                    ].map((item) => (
                       <button
-                        className="booking-icon-circle"
-                        onClick={() => setSlotOffset((current) => Math.min(maxSlotOffset, current + SLOTS_PER_PAGE))}
-                        disabled={!canNextSlots}
+                        key={item.id}
+                        className={period === item.id ? "period-tab active" : "period-tab"}
+                        onClick={() => {
+                          setPeriod(item.id);
+                          setSlotOffset(0);
+                        }}
                         type="button"
                       >
-                        <ChevronRight size={20} />
+                        {item.label}
                       </button>
-                    </>
-                  )}
-                </section>
+                    ))}
+                  </section>
 
-                <button
-                  className="booking-add-service"
-                  type="button"
-                  onClick={() => {
-                    captureEvent("booking_add_service_opened", analyticsProps());
-                    handleOpenAddService();
-                  }}
-                  disabled={saving}
-                >
-                  <Plus size={18} /> Adicionar outro servico
-                </button>
-
-                <section className="booking-selected-services">
-                  <div className="booking-selected-head">
-                    <h4>Servicos selecionados</h4>
-                    {selectedServiceIds.length > 1 ? (
-                      <button
-                        type="button"
-                        className="booking-selected-toggle"
-                        onClick={() => setServicesExpanded((current) => !current)}
-                      >
-                        {servicesExpanded ? "Ocultar detalhes" : "Ver detalhes"}
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="booking-selected-chip-row">
-                    {selectedServiceIds.map((serviceId, index) => {
-                      const service = serviceById[serviceId];
-                      if (!service) return null;
-                      return (
-                        <div key={`chip-${serviceId}`} className={index === 0 ? "booking-service-chip main" : "booking-service-chip"}>
-                          <span>{service.nome ?? "Servico"}</span>
-                          <small>{durationLabel(serviceDuration(service))}</small>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                <section className="booking-summary-card">
-                  {timelineRows.length === 0 ? (
-                    <p className="muted">Selecione um horario para ver o resumo do servico.</p>
-                  ) : selectedServiceIds.length > 1 && !servicesExpanded ? (
-                    <p className="muted booking-combo-hint">
-                      Combo com {selectedServiceIds.length} servicos. Use "Ver detalhes" para visualizar horario e remover extras.
-                    </p>
-                  ) : (
-                    timelineRows.map((entry) => {
-                      const service = serviceById[entry.serviceId];
-                      if (!service) return null;
-
-                      return (
-                        <div key={`${entry.serviceId}-${entry.start.toISOString()}`} className="booking-summary-line">
-                          <div>
-                            <strong>{service.nome ?? "Servico"}</strong>
-                            <small>{`${timeLabel(entry.start)} - ${timeLabel(entry.end)}`}</small>
-                          </div>
-                          <div className="booking-summary-price">
-                            <span>{formatMoney(service.preco)}</span>
-                            {selectedServiceIds.length > 1 && selectedServiceIds[0] !== entry.serviceId ? (
-                              <button
-                                className="booking-icon-circle small"
-                                type="button"
-                                disabled={saving}
-                                data-service-id={entry.serviceId}
-                                onClick={handleRemoveExtraService}
-                              >
-                                <X size={15} />
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-
-                  <div className="booking-summary-worker">
-                    {workerAvatar ? <img src={workerAvatar} alt={workerName} /> : <UserRound size={16} />}
-                    <p>
-                      <span>Profissional:</span> {workerName}
-                    </p>
-                  </div>
-                </section>
-
-                <section className="booking-worker-list">
-                  <h4>Profissional</h4>
-                  <div className="worker-chip-wrap">
-                    {workerIdsSorted.map((workerId) => {
-                      const worker = workers.find((entry) => entry.id === workerId);
-                      const supported = supportedServiceSet(workerId);
-                      const enabled = selectedServiceIds.every((serviceId) => supported.has(serviceId));
-                      const selected = workerId === selectedWorkerId;
-                      const name = worker?.nome ?? "Profissional";
-                      const avatar = workerPhoto(worker);
-
-                      return (
+                  <section className="booking-slots-row">
+                    {slotsByPeriod.length === 0 ? (
+                      <div className="booking-empty-slots">Não há horários disponíveis nesse período.</div>
+                    ) : (
+                      <>
                         <button
-                          key={workerId}
-                          className={selected ? "worker-chip active" : "worker-chip"}
-                          onClick={() => enabled && handleSelectWorker(workerId)}
-                          disabled={!enabled}
+                          className="booking-icon-circle"
+                          onClick={() => setSlotOffset((current) => Math.max(0, current - SLOTS_PER_PAGE))}
+                          disabled={!canPrevSlots}
                           type="button"
                         >
-                          {avatar ? <img src={avatar} alt={name} /> : <span>{name.slice(0, 1).toUpperCase()}</span>}
-                          {name}
+                          <ChevronLeft size={20} />
                         </button>
-                      );
-                    })}
-                  </div>
-                </section>
+
+                        <div className="booking-slot-list">
+                          {visibleSlots.map((slot) => (
+                            <button
+                              key={slot.start.toISOString()}
+                              className={[
+                                "booking-slot-btn",
+                                selectedStart && sameMinute(slot.start, selectedStart) ? "active" : "",
+                                !slot.available ? "occupied" : "",
+                              ].filter(Boolean).join(" ")}
+                              onClick={() => {
+                                if (!slot.available) return;
+                                setSlotConflict(false);
+                                setSelectedStart(slot.start);
+                                captureEvent("booking_slot_selected", analyticsProps({
+                                  selected_date: selectedDate ? dateKey(selectedDate) : undefined,
+                                  selected_start: timeLabel(slot.start),
+                                }));
+                              }}
+                              disabled={!slot.available}
+                              type="button"
+                            >
+                              <span>{timeLabel(slot.start)}</span>
+                              {!slot.available ? <small>Ocupado</small> : null}
+                            </button>
+                          ))}
+                        </div>
+
+                        <button
+                          className="booking-icon-circle"
+                          onClick={() => setSlotOffset((current) => Math.min(maxSlotOffset, current + SLOTS_PER_PAGE))}
+                          disabled={!canNextSlots}
+                          type="button"
+                        >
+                          <ChevronRight size={20} />
+                        </button>
+                      </>
+                    )}
+                  </section>
+
+                  <section className="booking-worker-list">
+                    <h4>Profissional</h4>
+                    <div className="worker-chip-wrap">
+                      {workerIdsSorted.map((workerId) => {
+                        const worker = workers.find((entry) => entry.id === workerId);
+                        const supported = supportedServiceSet(workerId);
+                        const enabled = selectedServiceIds.every((serviceId) => supported.has(serviceId));
+                        const selected = workerId === selectedWorkerId;
+                        const name = worker?.nome ?? "Profissional";
+                        const avatar = workerPhoto(worker);
+
+                        return (
+                          <button
+                            key={workerId}
+                            className={selected ? "worker-chip active" : "worker-chip"}
+                            onClick={() => enabled && handleSelectWorker(workerId)}
+                            disabled={!enabled}
+                            type="button"
+                          >
+                            {avatar ? <img src={avatar} alt={name} /> : <span>{name.slice(0, 1).toUpperCase()}</span>}
+                            {name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>
+                <aside className="booking-side">
+                  <section className="booking-selected-services">
+                    <div className="booking-selected-head">
+                      <h4>Serviços selecionados</h4>
+                      {selectedServiceIds.length > 1 ? (
+                        <button
+                          type="button"
+                          className="booking-selected-toggle"
+                          onClick={() => setServicesExpanded((current) => !current)}
+                        >
+                          {servicesExpanded ? "Ocultar detalhes" : "Ver detalhes"}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="booking-selected-chip-row">
+                      {selectedServiceIds.map((serviceId, index) => {
+                        const service = serviceById[serviceId];
+                        if (!service) return null;
+                        return (
+                          <div key={`chip-${serviceId}`} className={index === 0 ? "booking-service-chip main" : "booking-service-chip"}>
+                            <span>{service.nome ?? "Serviço"}</span>
+                            <small>{durationLabel(serviceDuration(service))}</small>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="booking-summary-card">
+                    {timelineRows.length === 0 ? (
+                      <p className="muted">Selecione um horário para ver o resumo do serviço.</p>
+                    ) : selectedServiceIds.length > 1 && !servicesExpanded ? (
+                      <p className="muted booking-combo-hint">
+                        Combo com {selectedServiceIds.length} serviços. Use "Ver detalhes" para visualizar horario e remover extras.
+                      </p>
+                    ) : (
+                      timelineRows.map((entry) => {
+                        const service = serviceById[entry.serviceId];
+                        if (!service) return null;
+
+                        return (
+                          <div key={`${entry.serviceId}-${entry.start.toISOString()}`} className="booking-summary-line">
+                            <div>
+                              <strong>{service.nome ?? "Serviço"}</strong>
+                              <small>{`${timeLabel(entry.start)} - ${timeLabel(entry.end)}`}</small>
+                            </div>
+                            <div className="booking-summary-price">
+                              <span>{formatMoney(service.preco)}</span>
+                              {selectedServiceIds.length > 1 && selectedServiceIds[0] !== entry.serviceId ? (
+                                <button
+                                  className="booking-icon-circle small"
+                                  type="button"
+                                  disabled={saving}
+                                  data-service-id={entry.serviceId}
+                                  onClick={handleRemoveExtraService}
+                                >
+                                  <X size={15} />
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+
+                    <div className="booking-summary-worker">
+                      {workerAvatar ? <img src={workerAvatar} alt={workerName} /> : <UserRound size={16} />}
+                      <p>
+                        <span>Profissional</span> {workerName}
+                      </p>
+                    </div>
+                  </section>
+
+                  <button
+                    className="booking-add-service"
+                    type="button"
+                    onClick={() => {
+                      captureEvent("booking_add_service_opened", analyticsProps());
+                      handleOpenAddService();
+                    }}
+                    disabled={saving}
+                  >
+                    <Plus size={18} /> Adicionar outro serviço
+                  </button>
+                </aside>
               </div>
 
               {error ? <p className="error-text booking-inline-error">{error}</p> : null}
               {slotConflict ? (
                 <button className="ghost-btn booking-conflict-back" type="button" onClick={() => onClose?.("slot-taken")}>
-                  Voltar para servicos
+                  Voltar para serviços
                 </button>
               ) : null}
 
               <footer className="booking-modern-foot">
                 <div>
-                  <p className="booking-total-label">Total:</p>
+                  <p className="booking-total-label">Total</p>
                   <strong>{formatMoney(totalPrice)}</strong>
                   <small>{durationLabel(totalDuration)}</small>
                 </div>
@@ -1490,7 +1500,7 @@ export default function BookingDialog({
       <Modal isOpen={addServiceOpen} onClose={() => setAddServiceOpen(false)} maxWidth={500}>
         <div className="booking-picker-dialog">
           <div className="dialog-head">
-            <h3>Adicionar outro servico</h3>
+            <h3>Adicionar outro serviço</h3>
             <button className="ghost-btn" onClick={() => setAddServiceOpen(false)} type="button">
               Fechar
             </button>
@@ -1500,7 +1510,7 @@ export default function BookingDialog({
             {addServiceOptions.map((service) => (
               <button key={service.id} className="booking-picker-item" type="button" onClick={() => handleAddService(service.id)}>
                 <div>
-                  <strong>{service.nome ?? "Servico"}</strong>
+                  <strong>{service.nome ?? "Serviço"}</strong>
                   <small>{serviceDuration(service)} min</small>
                 </div>
                 <span>{formatMoney(service.preco)}</span>
@@ -1513,7 +1523,7 @@ export default function BookingDialog({
       <Modal isOpen={customerOpen} onClose={() => !saving && setCustomerOpen(false)} maxWidth={460}>
         <div className="booking-customer-dialog">
           <div className="booking-customer-head">
-            <h3>Confirmacao</h3>
+            <h3>Confirmação</h3>
             <div className="booking-customer-chips">
               <span className="booking-customer-chip">{confirmationDateLabel}</span>
               <span className="booking-customer-chip">{confirmationTimeLabel}</span>
@@ -1574,7 +1584,7 @@ export default function BookingDialog({
           </div>
           <div className="booking-saving-copy">
             <h3>Confirmando agendamento</h3>
-            <p>Estamos reservando seu horario e validando a disponibilidade.</p>
+            <p>Estamos reservando seu horário e validando a disponibilidade.</p>
           </div>
           <div
             className="booking-saving-progress"

@@ -13,8 +13,8 @@ function isCancelable(status) {
 function statusColor(status) {
   const normalized = String(status ?? "").trim().toLowerCase();
   if (["cancelado", "cancelled", "canceled"].includes(normalized)) return "#b42318";
-  if (["finalizado", "completed"].includes(normalized)) return "#64748b";
-  return "#0e9c97";
+  if (["finalizado", "completed"].includes(normalized)) return "#61726A";
+  return "#3B8C60";
 }
 
 function byScheduledDate(left, right) {
@@ -82,11 +82,11 @@ export default function BusinessSchedulesDialog({ isOpen, onClose, businessId, b
       ]);
 
       setSchedules([...scheduleRows].sort(byScheduledDate));
-      setServiceNames(Object.fromEntries(serviceRows.map((row) => [String(row.id), row.nome || "Servico"])));
+      setServiceNames(Object.fromEntries(serviceRows.map((row) => [String(row.id), row.nome || "Serviço"])));
       setWorkerNames(Object.fromEntries(workerRows.map((row) => [String(row.id), row.nome || "Profissional"])));
       setSearchedPhone(targetPhone);
     } catch (loadError) {
-      setError(`Nao foi possivel buscar os agendamentos: ${loadError.message}`);
+      setError(`Não foi possível buscar os agendamentos: ${loadError.message}`);
     } finally {
       setLoading(false);
     }
@@ -94,7 +94,7 @@ export default function BusinessSchedulesDialog({ isOpen, onClose, businessId, b
 
   function search() {
     if (phoneDigits.length !== 11) {
-      setError("Informe o DDD e os nove digitos do WhatsApp usado no agendamento.");
+      setError("Informe o DDD e os nove dígitos do WhatsApp usado no agendamento.");
       return;
     }
     loadSchedules(`55${phoneDigits}`);
@@ -103,7 +103,7 @@ export default function BusinessSchedulesDialog({ isOpen, onClose, businessId, b
   async function cancelSchedule(schedule) {
     const scheduleId = toInt(schedule.id);
     if (scheduleId == null) {
-      setError("Agendamento invalido.");
+      setError("Agendamento inválido.");
       return;
     }
     if (!window.confirm("Deseja cancelar este agendamento?")) return;
@@ -158,7 +158,7 @@ export default function BusinessSchedulesDialog({ isOpen, onClose, businessId, b
       }
       await loadSchedules(searchedPhone);
     } catch (cancelError) {
-      setError(`Nao foi possivel cancelar o agendamento: ${cancelError.message}`);
+      setError(`Não foi possível cancelar o agendamento: ${cancelError.message}`);
     } finally {
       setCancelingId(null);
     }
@@ -195,12 +195,12 @@ export default function BusinessSchedulesDialog({ isOpen, onClose, businessId, b
                 disabled={loading}
               />
             </div>
-            <p className="muted">Usaremos esse numero apenas para localizar os seus agendamentos neste estabelecimento.</p>
+            <p className="muted">Usaremos esse número apenas para localizar os seus agendamentos neste estabelecimento.</p>
             {error ? <p className="error-text"><AlertTriangle size={14} /> {error}</p> : null}
             <div className="dialog-foot">
               <button className="ghost-btn" onClick={onClose} disabled={loading} type="button">Cancelar</button>
               <button className="cta-btn" onClick={search} disabled={loading} type="button">
-                {loading ? <><Loader2 size={16} className="spin" /> Buscando...</> : <><Search size={16} /> OK</>}
+                {loading ? <><Loader2 size={16} className="spin" /> Buscando...</> : <><Search size={16} /> Buscar</>}
               </button>
             </div>
           </div>
@@ -208,7 +208,7 @@ export default function BusinessSchedulesDialog({ isOpen, onClose, businessId, b
           <div className="business-schedules-results">
             <div className="business-schedules-phone-summary">
               <span>WhatsApp: +55 {formatLocalWhatsapp(searchedPhone.slice(2))}</span>
-              <button className="ghost-btn" onClick={() => setSearchedPhone("")} disabled={loading || cancelingId != null} type="button">Alterar numero</button>
+              <button className="ghost-btn" onClick={() => setSearchedPhone("")} disabled={loading || cancelingId != null} type="button">Alterar número</button>
             </div>
 
             {loading ? <p className="dialog-loading"><Loader2 size={17} className="spin" /> Atualizando agendamentos...</p> : null}
@@ -218,7 +218,7 @@ export default function BusinessSchedulesDialog({ isOpen, onClose, businessId, b
             <div className="business-schedules-list">
               {schedules.map((schedule) => {
                 const scheduleId = toInt(schedule.id);
-                const serviceName = serviceNames[String(schedule.servico_id)] || firstText([schedule.servico_nome, schedule.servico]) || "Servico";
+                const serviceName = serviceNames[String(schedule.servico_id)] || firstText([schedule.servico_nome, schedule.servico]) || "Serviço";
                 const workerName = workerNames[String(schedule.trabalhador_id)] || firstText([schedule.trabalhador_nome, schedule.trabalhador]) || "Profissional";
                 const color = statusColor(schedule.status);
 

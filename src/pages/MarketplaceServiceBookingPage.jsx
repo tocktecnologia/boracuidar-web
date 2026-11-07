@@ -60,13 +60,13 @@ export default function MarketplaceServiceBookingPage() {
           }
 
           if (serviceRows.length === 0) {
-            throw new Error("Servico nao encontrado.");
+            throw new Error("Serviço não encontrado.");
           }
 
           const resolvedService = serviceRows[0];
           const resolvedBusinessId = String(resolvedService.business_id ?? "").trim();
           if (!resolvedBusinessId) {
-            throw new Error("Servico sem business_id.");
+            throw new Error("Serviço sem business_id.");
           }
 
           const [resolvedBusinessRows, resolvedPageRows] = await Promise.all([
@@ -92,7 +92,7 @@ export default function MarketplaceServiceBookingPage() {
         if (!mounted) return;
 
         if (businessRows.length === 0) {
-          throw new Error("Estabelecimento nao encontrado.");
+          throw new Error("Estabelecimento não encontrado.");
         }
 
         setService(currentService);
@@ -115,9 +115,9 @@ export default function MarketplaceServiceBookingPage() {
 
   const businessId = String(service?.business_id ?? "").trim();
   const businessName = firstText([business?.nome, page?.title]) ?? "Estabelecimento";
-  const address = firstText([page?.address, business?.endereco, business?.cidade]) ?? "Endereco em atualizacao";
+  const address = firstText([page?.address, business?.endereco, business?.cidade]) ?? "Endereço em atualização";
   const logoUrl = firstText([page?.logo_url, business?.logo_url]) || "/assets/brand/icon-mark.png";
-  const serviceName = firstText([service?.nome]) ?? "Servico";
+  const serviceName = firstText([service?.nome]) ?? "Serviço";
 
   const closeTarget = useMemo(() => {
     if (!businessId) return "/marketplace";
@@ -134,7 +134,7 @@ export default function MarketplaceServiceBookingPage() {
   if (loading) {
     return (
       <MarketplaceLayout hideTopbar fullWidth>
-        <p className="section-message">Carregando agendamento do servico...</p>
+        <p className="section-message">Carregando agendamento do serviço...</p>
       </MarketplaceLayout>
     );
   }
@@ -143,7 +143,7 @@ export default function MarketplaceServiceBookingPage() {
     return (
       <MarketplaceLayout hideTopbar fullWidth>
         <div className="section-message">
-          <p className="error-text">{error || "Nao foi possivel abrir este agendamento."}</p>
+          <p className="error-text">{error || "Não foi possível abrir este agendamento."}</p>
           <Link className="ghost-btn" to="/marketplace">
             Voltar ao marketplace
           </Link>
@@ -167,7 +167,7 @@ export default function MarketplaceServiceBookingPage() {
           <Link
             className="business-logo-shortcut"
             to={`/marketplace/business?businessId=${encodeURIComponent(businessId)}`}
-            aria-label={`Abrir pagina de ${businessName}`}
+            aria-label={`Abrir página de ${businessName}`}
           >
             <img src={logoUrl} alt={businessName} />
           </Link>

@@ -13,10 +13,10 @@ function readBusinessId(search) {
 
 function statusColor(status) {
   const normalized = String(status ?? "").trim().toLowerCase();
-  if (normalized === "cancelado" || normalized === "cancelled" || normalized === "canceled") return "#ef4444";
-  if (normalized === "finalizado" || normalized === "completed") return "#64748b";
-  if (["confirmado", "agendado", "confirmed", "scheduled"].includes(normalized)) return "#0e9c97";
-  return "#475467";
+  if (normalized === "cancelado" || normalized === "cancelled" || normalized === "canceled") return "#B42318";
+  if (normalized === "finalizado" || normalized === "completed") return "#61726A";
+  if (["confirmado", "agendado", "confirmed", "scheduled"].includes(normalized)) return "#3B8C60";
+  return "#61726A";
 }
 
 function canCancel(status) {
@@ -43,7 +43,7 @@ export default function MarketplaceScheduleDetailPage() {
 
     async function loadData() {
       if (!scheduleId) {
-        setError("ID de agendamento invalido.");
+        setError("ID de agendamento inválido.");
         setLoading(false);
         return;
       }
@@ -59,14 +59,14 @@ export default function MarketplaceScheduleDetailPage() {
         });
 
         if (scheduleRows.length === 0) {
-          throw new Error("Agendamento nao encontrado.");
+          throw new Error("Agendamento não encontrado.");
         }
 
         const schedule = scheduleRows[0];
         const resolvedBusinessId = String(schedule.business_id ?? "").trim();
 
         if (routeBusinessId && resolvedBusinessId && routeBusinessId !== resolvedBusinessId) {
-          throw new Error("Este agendamento nao pertence ao estabelecimento informado.");
+          throw new Error("Este agendamento não pertence ao estabelecimento informado.");
         }
 
         const [businessRows, workerRows, serviceRows] = await Promise.all([
@@ -122,7 +122,7 @@ export default function MarketplaceScheduleDetailPage() {
     const currentScheduleId = toInt(payload.schedule?.id);
     const scheduleBusinessId = String(payload.schedule?.business_id ?? "").trim();
     if (!currentScheduleId || !scheduleBusinessId) {
-      setError("Agendamento invalido para cancelamento.");
+      setError("Agendamento inválido para cancelamento.");
       return;
     }
 
@@ -186,7 +186,7 @@ export default function MarketplaceScheduleDetailPage() {
   const resolvedBusinessId = String(payload?.schedule?.business_id ?? routeBusinessId ?? "").trim();
 
   return (
-    <MarketplaceLayout hideTopbar>
+    <MarketplaceLayout>
       <section className="schedules-page">
         <article className="surface-block schedule-card schedule-detail-card">
           {loading ? (
@@ -200,7 +200,7 @@ export default function MarketplaceScheduleDetailPage() {
           {!loading && !error && payload ? (
             <>
               <div className="schedule-card-head">
-                <strong>{payload.service?.nome ?? "Servico"}</strong>
+                <strong>{payload.service?.nome ?? "Serviço"}</strong>
                 <span
                   style={{
                     color: statusColor(payload.schedule?.status),
@@ -215,7 +215,7 @@ export default function MarketplaceScheduleDetailPage() {
               <p>Profissional: {payload.worker?.nome ?? payload.schedule?.trabalhador_nome ?? "Profissional"}</p>
               <p>Cliente: {payload.schedule?.cliente_nome || "Cliente"}</p>
               <p>Data: {formatDate(payload.schedule?.data_agendamento)}</p>
-              <p>Horario: {payload.schedule?.hora_inicio || "--:--"} - {payload.schedule?.hora_fim || "--:--"}</p>
+              <p>Horário: {payload.schedule?.hora_inicio || "--:--"} - {payload.schedule?.hora_fim || "--:--"}</p>
               <p>Valor: {formatMoney(payload.service?.preco || 0)}</p>
 
               <button

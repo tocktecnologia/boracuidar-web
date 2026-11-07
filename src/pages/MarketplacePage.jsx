@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarCheck, ChevronLeft, ChevronRight, MapPin, Search, ShieldCheck, Star } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ChevronLeft, ChevronRight, MapPin, Search, Star } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useRotina } from "../lib/rotina/store";
+import { cycleStatus } from "../lib/rotina/engine";
 import MarketplaceLayout from "../components/layout/MarketplaceLayout";
 import { queryCollectionGroupRows, queryRows } from "../lib/firestore";
 import {
@@ -38,11 +40,19 @@ export default function MarketplacePage() {
 
   const [searchService, setSearchService] = useState("");
   const [searchWhere, setSearchWhere] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("Todos");
+  const [searchParams] = useSearchParams();
+  const rotina = useRotina();
+  const rotinaDue = (rotina.cycles ?? [])
+    .map((cycle) => ({ cycle, status: cycleStatus(cycle) }))
+    .filter(({ cycle, status }) => cycle.category && ["late", "due"].includes(status.tone))
+    .slice(0, 4);
+  const initialCategory = searchParams.get("categoria") || "Todos";
+  const fromRotina = searchParams.get("origem") === "rotina";
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [appliedFilters, setAppliedFilters] = useState({
     service: "",
     where: "",
-    category: "Todos",
+    category: initialCategory,
   });
 
   const carouselRef = useRef(null);
@@ -122,7 +132,7 @@ export default function MarketplacePage() {
             category: typeLabel(business.business_type),
             city: firstText([business.cidade, page?.city]) ?? "",
             state: firstText([business.estado, page?.state]) ?? "",
-            address: firstText([page?.address, business.endereco]) ?? "Endereco em atualizacao",
+            address: firstText([page?.address, business.endereco]) ?? "Endereço em atualização",
             description:
               firstText([page?.about, page?.short_description, page?.tagline, business.descricao]) ??
               "Especialistas prontos para te atender com agendamento online.",
@@ -158,10 +168,16 @@ export default function MarketplacePage() {
   }, [businesses]);
   const heroCategories = useMemo(() => {
     const fastOptions = ["Todos", ...categories.filter((item) => item !== "Todos")];
+    if (initialCategory !== "Todos" && !fastOptions.includes(initialCategory)) fastOptions.splice(1, 0, initialCategory);
     return fastOptions.slice(0, 9);
-  }, [categories]);
+  }, [categories, initialCategory]);
 
   const featuredBusinesses = useMemo(() => businesses.filter((item) => item.featured), [businesses]);
+
+  useEffect(() => {
+    if (loading || !fromRotina || initialCategory === "Todos") return;
+    requestAnimationFrame(() => filteredCardsRef.current?.scrollIntoView({ block: "start" }));
+  }, [loading, initialCategory, fromRotina]);
 
   const filteredBusinesses = useMemo(() => {
     const serviceQuery = appliedFilters.service.trim().toLowerCase();
@@ -183,23 +199,6 @@ export default function MarketplacePage() {
       return true;
     });
   }, [businesses, appliedFilters]);
-
-  const stats = useMemo(() => {
-    const servicesTotal = businesses.reduce((sum, item) => sum + item.servicesCount, 0);
-    const reviewed = businesses.filter((item) => item.reviewsCount > 0);
-    const reviewsTotal = reviewed.reduce((sum, item) => sum + item.reviewsCount, 0);
-    const weightedStars = reviewed.reduce((sum, item) => sum + item.rating * item.reviewsCount, 0);
-    const averageRating = reviewsTotal > 0 ? weightedStars / reviewsTotal : null;
-    const prices = businesses.map((item) => item.startingPrice).filter((value) => value > 0);
-    const minPrice = prices.length > 0 ? Math.min(...prices) : null;
-
-    return {
-      businessesTotal: businesses.length,
-      servicesTotal,
-      averageRating,
-      minPrice,
-    };
-  }, [businesses]);
 
   function moveCarousel(direction) {
     const container = carouselRef.current;
@@ -224,24 +223,90 @@ export default function MarketplacePage() {
     });
   }
 
-  return (
-    <MarketplaceLayout fullWidth heroTopbar>
-      <section className="market-search-hero">
-        <div className="market-headline with-image">
-          <img src="/assets/brand/site-hero.png" alt="Bora Cuidar Marketplace" className="market-headline-image" />
-          <div className="market-headline-overlay" />
-          <h1>
-            Bora Cuidar
-            <span>Beleza e bem-estar perto de você</span>
-          </h1>
-          <p>Descubra servicos, compare opcoes e agende em minutos.</p>
+  function renderCard(item, withDescription = false) {
+    const location = item.city ? `${item.city}${item.state ? ` · ${item.state}` : ""}` : item.address;
+    return (
+      <article className={withDescription ? "estab-grid-card" : "estab-carousel-card"}>
+        <div className="carousel-cover-wrap">
+          <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" loading="lazy" />
         </div>
+        <div className="estab-card-body">
+          <div className="estab-card-title-row">
+            <h3>{item.name}</h3>
+            {item.reviewsCount > 0 ? (
+              <span className="carousel-rating-pill" aria-label={`Nota ${item.rating.toFixed(1)} de 5`}>
+                <Star size={13} className="rating-pill-star" />
+                <span>{item.rating.toFixed(1).replace(".", ",")}</span>
+                <small>({item.reviewsCount})</small>
+              </span>
+            ) : (
+              <span className="estab-new-badge">Novo</span>
+            )}
+          </div>
+          <p className="market-address">
+            {item.category ? <span>{item.category}</span> : null}
+            {item.category && location ? <span aria-hidden="true"> · </span> : null}
+            {location}
+          </p>
+          {withDescription && item.description ? <p className="market-description">{item.description}</p> : null}
+          <p className="price-from">
+            {item.startingPrice > 0 ? <>A partir de <strong>{formatMoney(item.startingPrice)}</strong></> : "Consulte valores"}
+          </p>
+        </div>
+      </article>
+    );
+  }
 
-        <div className="hero-quick-cats">
+  return (
+    <MarketplaceLayout fullWidth heroTopbar showFooter>
+      <section className="market-search-hero">
+        <div className="market-hero-inner">
+          <div className="market-headline">
+            <p className="market-eyebrow">Beleza, saúde e bem-estar</p>
+            <h1>
+              Marque um horário <span>com você.</span>
+            </h1>
+            <p>Encontre barbearias, salões, clínicas e profissionais perto de você e agende online em poucos toques.</p>
+
+            <form className="booksy-search-panel" onSubmit={handleApplyFilters} role="search">
+              <div className="search-cell wide">
+                <label htmlFor="market-search-service"><Search size={16} /></label>
+                <input
+                  id="market-search-service"
+                  value={searchService}
+                  onChange={(event) => setSearchService(event.target.value)}
+                  placeholder="Serviço ou estabelecimento"
+                  aria-label="Serviço ou estabelecimento"
+                />
+              </div>
+              <div className="search-cell">
+                <label htmlFor="market-search-where"><MapPin size={16} /></label>
+                <input
+                  id="market-search-where"
+                  value={searchWhere}
+                  onChange={(event) => setSearchWhere(event.target.value)}
+                  placeholder="Cidade ou bairro"
+                  aria-label="Cidade ou bairro"
+                />
+              </div>
+              <button className="search-submit-btn" type="submit">Buscar</button>
+            </form>
+          </div>
+
+          <div className="market-headline-media" aria-hidden="true">
+            <img src="/assets/brand/site-hero.png" alt="" className="market-headline-image" />
+          </div>
+        </div>
+      </section>
+
+      <div className="market-content-shell">
+        <div className="hero-quick-cats" role="tablist" aria-label="Categorias">
           {heroCategories.map((category) => (
             <button
               key={category}
               type="button"
+              role="tab"
+              aria-selected={appliedFilters.category === category}
               className={appliedFilters.category === category ? "hero-cat-btn active" : "hero-cat-btn"}
               onClick={() => {
                 setSelectedCategory(category);
@@ -252,21 +317,45 @@ export default function MarketplacePage() {
             </button>
           ))}
         </div>
-      </section>
 
-      <div className="market-content-shell">
-      {loading ? <p className="section-message">Carregando marketplace...</p> : null}
+        {rotinaDue.length > 0 ? (
+          <section className="explore-rotina-strip" aria-label="Da sua rotina">
+            <p className="explore-rotina-title">Da sua rotina</p>
+            <div className="explore-rotina-items">
+              {rotinaDue.map(({ cycle, status }) => (
+                <button
+                  key={cycle.id}
+                  type="button"
+                  className={appliedFilters.category === cycle.category ? "explore-rotina-item active" : "explore-rotina-item"}
+                  onClick={() => {
+                    setSelectedCategory(cycle.category);
+                    setAppliedFilters((prev) => ({ ...prev, category: cycle.category }));
+                    requestAnimationFrame(() => filteredCardsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+                  }}
+                >
+                  <strong>{cycle.label}</strong>
+                  <small className={`status-text ${status.tone}`}>{status.label}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {loading ? <p className="section-message">Carregando estabelecimentos...</p> : null}
         {error ? <p className="error-text section-message">{error}</p> : null}
 
         {!loading && !error ? (
           <section className="market-list-section">
             <div className="list-header">
-              <h2>Estabelecimentos em destaque</h2>
+              <div>
+                <h2>Em destaque</h2>
+                <p>Lugares bem avaliados para agendar hoje.</p>
+              </div>
               <div className="carousel-arrows">
                 <button className="carousel-arrow" onClick={() => moveCarousel(-1)} aria-label="Anterior" type="button">
                   <ChevronLeft size={18} />
                 </button>
-                <button className="carousel-arrow" onClick={() => moveCarousel(1)} aria-label="Proximo" type="button">
+                <button className="carousel-arrow" onClick={() => moveCarousel(1)} aria-label="Próximo" type="button">
                   <ChevronRight size={18} />
                 </button>
               </div>
@@ -277,25 +366,8 @@ export default function MarketplacePage() {
             ) : (
               <div className="estab-carousel" ref={carouselRef}>
                 {featuredBusinesses.map((item) => (
-                  <Link
-                    key={item.id}
-                    className="estab-carousel-card-link"
-                    to={publicBusinessPath(item)}
-                  >
-                    <article className="estab-carousel-card">
-                      <div className="carousel-cover-wrap">
-                        <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" />
-                        {item.reviewsCount > 0 ? (
-                          <span className="carousel-rating-pill">
-                            <Star size={13} className="rating-pill-star" />
-                            <span>{item.rating.toFixed(1)}</span>
-                          </span>
-                        ) : null}
-                      </div>
-                      <h3>{item.name}</h3>
-                      <p className="market-address">{item.city ? `${item.city}${item.state ? ` - ${item.state}` : ""}` : item.address}</p>
-                      <p className="price-from">{item.startingPrice > 0 ? `A partir de ${formatMoney(item.startingPrice)}` : "Consulte valores"}</p>
-                    </article>
+                  <Link key={item.id} className="estab-carousel-card-link" to={publicBusinessPath(item)}>
+                    {renderCard(item)}
                   </Link>
                 ))}
               </div>
@@ -305,55 +377,38 @@ export default function MarketplacePage() {
 
         {!loading && !error ? (
           <section className="market-grid-section" ref={filteredCardsRef}>
-            <form className="booksy-search-panel market-estab-filters" onSubmit={handleApplyFilters}>
-              <div className="search-cell wide">
-                <label><Search size={14} /> Qual servico?</label>
-                <input
-                  value={searchService}
-                  onChange={(event) => setSearchService(event.target.value)}
-                  placeholder="Corte, escova, manicure, consulta..."
-                />
-              </div>
-              <div className="search-cell">
-                <label><MapPin size={14} /> Onde?</label>
-                <input
-                  value={searchWhere}
-                  onChange={(event) => setSearchWhere(event.target.value)}
-                  placeholder="Cidade ou bairro"
-                />
-              </div>
-              <button className="search-submit-btn" type="submit">Buscar</button>
-            </form>
-
             <div className="list-header">
-              <h2>Estabelecimentos</h2>
+              <div>
+                <h2>{appliedFilters.category === "Todos" ? "Todos os estabelecimentos" : appliedFilters.category}</h2>
+                <p>{filteredBusinesses.length} {filteredBusinesses.length === 1 ? "resultado" : "resultados"}</p>
+              </div>
             </div>
 
             {filteredBusinesses.length === 0 ? (
-              <p className="section-message">Nenhum estabelecimento encontrado para os filtros informados.</p>
+              <div className="section-message">
+                <p>
+                  {appliedFilters.category !== "Todos"
+                    ? `Ainda não temos ${appliedFilters.category.toLowerCase()} disponível por aqui.`
+                    : "Nenhum estabelecimento encontrado para os filtros informados."}
+                </p>
+                {appliedFilters.category !== "Todos" ? (
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={() => {
+                      setSelectedCategory("Todos");
+                      setAppliedFilters((prev) => ({ ...prev, category: "Todos" }));
+                    }}
+                  >
+                    Ver todos os estabelecimentos
+                  </button>
+                ) : null}
+              </div>
             ) : (
               <div className="market-cards-grid">
                 {filteredBusinesses.map((item) => (
-                  <Link
-                    key={item.id}
-                    className="estab-grid-card-link"
-                    to={publicBusinessPath(item)}
-                  >
-                    <article className="estab-grid-card">
-                      <div className="carousel-cover-wrap">
-                        <img src={item.coverUrl} alt={item.name} className="carousel-card-cover" />
-                        {item.reviewsCount > 0 ? (
-                          <span className="carousel-rating-pill">
-                            <Star size={13} className="rating-pill-star" />
-                            <span>{item.rating.toFixed(1)}</span>
-                          </span>
-                        ) : null}
-                      </div>
-                      <h3>{item.name}</h3>
-                      <p className="market-address">{item.city ? `${item.city}${item.state ? ` - ${item.state}` : ""}` : item.address}</p>
-                      <p className="market-description">{item.description}</p>
-                      <p className="price-from">{item.startingPrice > 0 ? `A partir de ${formatMoney(item.startingPrice)}` : "Consulte valores"}</p>
-                    </article>
+                  <Link key={item.id} className="estab-grid-card-link" to={publicBusinessPath(item)}>
+                    {renderCard(item, true)}
                   </Link>
                 ))}
               </div>
@@ -363,55 +418,15 @@ export default function MarketplacePage() {
 
         {!loading && !error ? (
           <>
-            <section className="market-how-it-works">
-              <h2>Como usar o marketplace</h2>
-              <div className="market-how-grid">
-                <article className="market-how-card">
-                  <Search size={18} />
-                  <h3>Busque</h3>
-                  <p>Digite o servico, cidade ou tipo de atendimento que voce quer.</p>
-                </article>
-                <article className="market-how-card">
-                  <ShieldCheck size={18} />
-                  <h3>Compare</h3>
-                  <p>Veja perfil, nota, descricao e disponibilidade para decidir rapido.</p>
-                </article>
-                <article className="market-how-card">
-                  <CalendarCheck size={18} />
-                  <h3>Reserve</h3>
-                  <p>Entre no perfil, escolha o servico e finalize o agendamento em minutos.</p>
-                </article>
-              </div>
-            </section>
-
-            <section className="market-curiosities">
-              <h2>Curiosidades do marketplace</h2>
-              <div className="market-curiosities-grid">
-                <article className="market-stat-card">
-                  <strong>{stats.businessesTotal}</strong>
-                  <p>Estabelecimentos ativos</p>
-                </article>
-                <article className="market-stat-card">
-                  <strong>{stats.servicesTotal}</strong>
-                  <p>Servicos publicados</p>
-                </article>
-                <article className="market-stat-card">
-                  <strong>{stats.averageRating ? stats.averageRating.toFixed(1) : "--"}</strong>
-                  <p>Avaliacao media</p>
-                </article>
-                <article className="market-stat-card">
-                  <strong>{stats.minPrice ? formatMoney(stats.minPrice) : "--"}</strong>
-                  <p>Faixa inicial</p>
-                </article>
-              </div>
-            </section>
-
             <section className="market-business-cta">
-              <h2>Tem um negocio e quer aparecer aqui?</h2>
-              <p>Mostre sua pagina, receba novos clientes e transforme visitas em agendamentos.</p>
+              <div>
+                <p className="market-eyebrow">Para negócios</p>
+                <h2>Seu negócio na agenda de quem quer se cuidar.</h2>
+                <p>Página própria, agendamento 24 horas e lembretes automáticos pelo WhatsApp. Grátis para começar.</p>
+              </div>
               <div className="market-business-cta-actions">
-                <a href="https://business.boracuidar.app/signup" className="market-signup-btn">Cadastrar meu negocio</a>
-                <a href="https://boracuidar.app/signin" className="market-signin-btn">Ja tenho conta</a>
+                <a href="https://business.boracuidar.app/signup" className="market-signup-btn">Cadastrar meu negócio</a>
+                <a href="https://boracuidar.app/signin" className="market-signin-btn">Já tenho conta</a>
               </div>
             </section>
           </>
